@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: direct-gpu-embed
+  namespace: model-serving-benchmark
+  labels:
+    app: direct-gpu-embed
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: direct-gpu-embed
+  template:
+    metadata:
+      labels:
+        app: direct-gpu-embed
+    spec:
+      nodeSelector:
+        karpenter.k8s.aws/instance-family: g6
+        topology.kubernetes.io/zone: us-east-1d
+        karpenter.sh/capacity-type: "on-demand"
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: server
+          image: pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
+          command:
+            - bash
+            - -c
+            - |
+              pip install --quiet --no-cache-dir "transformers>=4.40.0,<4.49.0" "sentence-transformers>=2.5.0,<3.5.0" accelerate fastapi "uvicorn[standard]" orjson
+              exec uvicorn app:app --host "::" --port 8000 --workers 1 --no-access-log
+          workingDir: /app
+          env:
+            - name: MODEL_NAME
+              value: "sentence-transformers/all-MiniLM-L6-v2"
+            - name: MAX_BATCH_SIZE
+              value: "32"
+            - name: BATCH_WAIT_TIMEOUT_S
+              value: "0.005"
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: 8000
+            initialDelaySeconds: 40
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "8Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4000m"
+              memory: "12Gi"
+              nvidia.com/gpu: "1"

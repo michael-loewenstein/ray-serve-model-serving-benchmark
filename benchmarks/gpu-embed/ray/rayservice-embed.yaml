@@ -1,0 +1,148 @@
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: rayservice-gpu-embed
+  namespace: model-serving-benchmark
+spec:
+  serveConfigV2: |
+    proxy_location: EveryNode
+    http_options:
+      host: "::"
+      port: 8000
+    applications:
+      - name: default
+        route_prefix: /
+        import_path: serve_embed:app
+        runtime_env:
+          pip:
+            - "torch"
+            - "transformers>=4.40.0,<4.49.0"
+            - "sentence-transformers>=2.5.0,<3.5.0"
+            - "accelerate"
+            - "orjson>=3.9.0"
+          env_vars:
+            RAY_SERVE_ENABLE_HA_PROXY: "1"
+            RAY_SERVE_RUN_USER_CODE_IN_SEPARATE_THREAD: "0"
+            RAY_SERVE_PROXY_PREFER_LOCAL_NODE_ROUTING: "1"
+            RAY_IGNORE_VERSION_CHECK: "1"
+        deployments:
+          - name: EmbeddingDeployment
+            num_replicas: 1
+            max_ongoing_requests: 100
+            ray_actor_options:
+              num_gpus: 1
+              num_cpus: 2.0
+              resources: {"worker_only": 1}
+  rayClusterConfig:
+    rayVersion: "2.55.1"
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: "::"
+        num-cpus: "0"
+        resources: '{"head_only":4}'
+        node-ip-address: "$MY_POD_IP"
+        metrics-export-port: "8080"
+      template:
+        spec:
+          nodeSelector:
+            karpenter.k8s.aws/instance-family: c6i
+            topology.kubernetes.io/zone: us-east-1d
+            karpenter.sh/capacity-type: "on-demand"
+          containers:
+            - name: ray-head
+              image: rayproject/ray:2.55.1-py311
+              env:
+                - name: MY_POD_IP
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.podIP
+                - name: RAY_IGNORE_VERSION_CHECK
+                  value: "1"
+              resources:
+                requests:
+                  cpu: "1000m"
+                  memory: "3Gi"
+                limits:
+                  cpu: "2000m"
+                  memory: "5Gi"
+    workerGroupSpecs:
+      - groupName: gpu-worker
+        replicas: 1
+        minReplicas: 1
+        maxReplicas: 1
+        rayStartParams:
+          object-store-memory: "1073741824"
+          num-gpus: "1"
+          resources: '{"worker_only":1}'
+          node-ip-address: "$MY_POD_IP"
+          ignore-version-check: "true"
+        template:
+          metadata:
+            labels:
+              ray.io/node-type: worker
+              app: ray-worker-gpu-embed
+          spec:
+            nodeSelector:
+              karpenter.k8s.aws/instance-family: g6
+              topology.kubernetes.io/zone: us-east-1d
+              karpenter.sh/capacity-type: "on-demand"
+            tolerations:
+              - key: "nvidia.com/gpu"
+                operator: "Exists"
+                effect: "NoSchedule"
+            containers:
+              - name: ray-gpu-worker
+                image: rayproject/ray:2.55.1-py311-gpu
+                env:
+                  - name: MY_POD_IP
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: status.podIP
+                  - name: RAY_SERVE_ENABLE_HA_PROXY
+                    value: "1"
+                  - name: RAY_SERVE_RUN_USER_CODE_IN_SEPARATE_THREAD
+                    value: "0"
+                  - name: RAY_SERVE_PROXY_PREFER_LOCAL_NODE_ROUTING
+                    value: "1"
+                  - name: RAY_IGNORE_VERSION_CHECK
+                    value: "1"
+                ports:
+                  - containerPort: 30000
+                    name: serve-direct
+                  - containerPort: 8080
+                    name: metrics
+                readinessProbe:
+                  exec:
+                    command:
+                      - python3
+                      - -c
+                      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:30000/readiness')
+                  initialDelaySeconds: 40
+                  periodSeconds: 5
+                  timeoutSeconds: 3
+                  failureThreshold: 20
+                resources:
+                  requests:
+                    cpu: "2000m"
+                    memory: "8Gi"
+                    nvidia.com/gpu: "1"
+                  limits:
+                    cpu: "4000m"
+                    memory: "12Gi"
+                    nvidia.com/gpu: "1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rayservice-gpu-embed-haproxy-svc
+  namespace: model-serving-benchmark
+spec:
+  selector:
+    app: ray-worker-gpu-embed
+    ray.io/node-type: worker
+  ports:
+    - name: haproxy
+      port: 8000
+      targetPort: 30000
+      protocol: TCP
+  type: ClusterIP
