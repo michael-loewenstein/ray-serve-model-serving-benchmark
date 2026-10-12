@@ -1,0 +1,40 @@
+FROM python:3.11-slim
+
+USER root
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    OMP_NUM_THREADS=1 \
+    MODEL_PATH=/models/model.json
+
+WORKDIR /app
+
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        libgomp1 \
+        socat && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    "protobuf<5.0.0,>=4.25.0" \
+    "pydantic>=2.10,<3" \
+    "ray[serve]==2.55.1" \
+    "ray-haproxy==2.8.25" \
+    "jinja2>=3.1.4,<4" \
+    "xgboost==2.1.1" \
+    "orjson>=3.9.0"
+
+# Dynamically link the HAProxy binary bundled with ray-haproxy into PATH
+RUN ln -sf $(python3 -c "import pathlib, ray_haproxy; print(pathlib.Path(ray_haproxy.__file__).parent / 'bin' / 'haproxy')") /usr/local/bin/haproxy
+
+# Global GC disable in sitecustomize to eliminate pause jitter
+RUN printf 'import gc\ngc.disable()\n' \
+    | tee /usr/local/lib/python3.11/site-packages/sitecustomize.py \
+    > /dev/null
+
+COPY ray_serve_app.py /app/serve_app.py
+
+EXPOSE 8000 8080 30000
+
+CMD ["serve", "run", "serve_app:app"]

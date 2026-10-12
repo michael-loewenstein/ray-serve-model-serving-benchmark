@@ -1,0 +1,145 @@
+# Architecture B: Ray Serve with Head Node Python Proxy
+# Standard Ray Serve routing path: Ingress/ClusterIP -> Head SERVE_PROXY_ACTOR -> Worker Actor
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: ray-serve-python-proxy
+  namespace: model-serving-benchmark
+  labels:
+    app.kubernetes.io/name: ray-serve-python-proxy
+    benchmark.arch: ray-python-proxy
+spec:
+  serviceUnhealthyThreshold: 300
+  rayClusterConfig:
+    rayVersion: "2.55.1"
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+        num-cpus: "0"
+        node-ip-address: "$MY_POD_IP"
+        metrics-export-port: "8080"
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ray-head
+            benchmark.arch: ray-python-proxy
+        spec:
+          # nodeSelector:
+          #   node.kubernetes.io/instance-type: c6i.2xlarge
+          #   topology.kubernetes.io/zone: us-east-1a
+          containers:
+            - name: ray-head
+              image: rayproject/ray:2.55.1-py311
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: MY_POD_IP
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.podIP
+                - name: OMP_NUM_THREADS
+                  value: "1"
+                - name: MODEL_PATH
+                  value: "/models/model.json"
+              resources:
+                requests:
+                  cpu: "1000m"
+                  memory: "3Gi"
+                limits:
+                  cpu: "2000m"
+                  memory: "5Gi"
+              volumeMounts:
+                - name: app-code
+                  mountPath: /opt/ray_serve_app/ray_serve_app.py
+                  subPath: ray_serve_app.py
+                - name: model-volume
+                  mountPath: /models
+              ports:
+                - containerPort: 6379
+                  name: gcs
+                - containerPort: 8265
+                  name: dashboard
+                - containerPort: 8000
+                  name: serve
+                - containerPort: 8080
+                  name: metrics
+          volumes:
+            - name: app-code
+              configMap:
+                name: ray-serve-code
+            - name: model-volume
+              configMap:
+                name: benchmark-model-artifact
+    workerGroupSpecs:
+      - groupName: worker
+        replicas: 2
+        minReplicas: 2
+        maxReplicas: 2
+        rayStartParams:
+          node-ip-address: "$MY_POD_IP"
+        template:
+          metadata:
+            labels:
+              app.kubernetes.io/name: ray-worker
+              benchmark.arch: ray-python-proxy
+          spec:
+            # nodeSelector:
+            #   node.kubernetes.io/instance-type: c6i.2xlarge
+            #   topology.kubernetes.io/zone: us-east-1a
+            containers:
+              - name: ray-worker
+                image: rayproject/ray:2.55.1-py311
+                imagePullPolicy: IfNotPresent
+                env:
+                  - name: MY_POD_IP
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: status.podIP
+                  - name: OMP_NUM_THREADS
+                    value: "1"
+                  - name: MODEL_PATH
+                    value: "/models/model.json"
+                resources:
+                  requests:
+                    cpu: "1000m"
+                    memory: "2Gi"
+                  limits:
+                    cpu: "2000m"
+                    memory: "4Gi"
+                volumeMounts:
+                  - name: app-code
+                    mountPath: /opt/ray_serve_app/ray_serve_app.py
+                    subPath: ray_serve_app.py
+                  - name: model-volume
+                    mountPath: /models
+                ports:
+                  - containerPort: 8080
+                    name: metrics
+            volumes:
+              - name: app-code
+                configMap:
+                  name: ray-serve-code
+              - name: model-volume
+                configMap:
+                  name: benchmark-model-artifact
+  serveConfigV2: |
+    proxy_location: EveryNode
+    http_options:
+      host: "0.0.0.0"
+      port: 8000
+    applications:
+      - name: default
+        route_prefix: /
+        import_path: ray_serve_app:app
+        runtime_env:
+          pip:
+            - "xgboost==2.1.1"
+            - "orjson>=3.9.0"
+          env_vars:
+            MODEL_PATH: "/models/model.json"
+            OMP_NUM_THREADS: "1"
+        deployments:
+          - name: XGBoostDeployment
+            num_replicas: 2
+            max_ongoing_requests: 50
+            ray_actor_options:
+              num_cpus: 1.0

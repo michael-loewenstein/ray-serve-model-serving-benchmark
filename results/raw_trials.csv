@@ -1,0 +1,16 @@
+architecture,target_key,trial_number,total_requests,successful_requests,failed_requests,goodput_rps,p50_ms,p90_ms,p95_ms,p99_ms,max_ms,pure_booster_predict_p50_ms,server_total_p50_ms,network_transit_p50_ms
+Direct Serving (Uvicorn),direct,1,1500,1500,0,50.00,1.120,1.341,1.546,1.881,12.87,0.503,0.527,0.444
+Direct Serving (Uvicorn),direct,2,1500,1500,0,50.00,0.973,1.151,1.239,1.435,16.42,0.503,0.527,0.444
+Direct Serving (Uvicorn),direct,3,1500,1500,0,50.00,0.965,1.129,1.256,1.464,14.19,0.503,0.527,0.444
+Direct Serving (Uvicorn),direct,4,1501,1501,0,50.03,0.971,1.139,1.225,1.444,15.02,0.503,0.527,0.444
+Direct Serving (Uvicorn),direct,5,1500,1500,0,50.00,0.977,1.156,1.246,1.442,13.95,0.503,0.527,0.444
+Ray Serve (Python Proxy),ray_python,1,1501,1501,0,50.03,1.443,1.821,1.954,2.268,21.04,0.612,0.627,0.896
+Ray Serve (Python Proxy),ray_python,2,1500,1500,0,50.00,1.442,1.838,1.942,2.163,18.72,0.612,0.627,0.896
+Ray Serve (Python Proxy),ray_python,3,1501,1501,0,50.03,1.478,1.959,2.069,4.865,29.41,0.612,0.627,0.896
+Ray Serve (Python Proxy),ray_python,4,1500,1500,0,50.00,1.716,4.312,7.087,16.501,48.91,0.612,0.627,0.896
+Ray Serve (Python Proxy),ray_python,5,1501,1501,0,50.03,1.572,2.115,2.419,5.805,32.16,0.612,0.627,0.896
+Ray Serve (Worker HAProxy :30000),ray_haproxy,1,1500,1500,0,50.00,1.274,1.691,1.763,2.071,2.86,0.603,0.618,0.709
+Ray Serve (Worker HAProxy :30000),ray_haproxy,2,1501,1501,0,50.03,1.245,1.688,1.760,1.868,2.91,0.603,0.618,0.709
+Ray Serve (Worker HAProxy :30000),ray_haproxy,3,1501,1501,0,50.03,1.259,1.768,1.856,3.257,14.81,0.603,0.618,0.709
+Ray Serve (Worker HAProxy :30000),ray_haproxy,4,1501,1501,0,50.03,1.418,1.815,1.879,2.842,11.23,0.603,0.618,0.709
+Ray Serve (Worker HAProxy :30000),ray_haproxy,5,1501,1501,0,50.03,1.378,1.842,1.916,2.595,9.47,0.603,0.618,0.709

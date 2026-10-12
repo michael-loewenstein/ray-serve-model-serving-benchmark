@@ -1,0 +1,99 @@
+# Architecture A: Direct Model Serving Baseline
+# Native Kubernetes Deployment with FastAPI + Uvicorn + orjson + XGBoost
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: direct-serving-cpu
+  namespace: model-serving-benchmark
+  labels:
+    app.kubernetes.io/name: direct-serving-cpu
+    app.kubernetes.io/component: inference
+    benchmark.arch: direct
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: direct-serving-cpu
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: direct-serving-cpu
+        app.kubernetes.io/component: inference
+        benchmark.arch: direct
+    spec:
+      # Hardware matching: Target dedicated compute node pool (e.g., AWS c6i.2xlarge)
+      # nodeSelector:
+      #   node.kubernetes.io/instance-type: c6i.2xlarge
+      #   topology.kubernetes.io/zone: us-east-1a
+      containers:
+        - name: server
+          # Replace with your pre-built image or use python:3.11-slim with mounted code
+          image: python:3.11-slim
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              apt-get update -qq && apt-get install -y --no-install-recommends libgomp1 > /dev/null 2>&1
+              pip install --quiet --no-cache-dir "xgboost==2.1.1" "fastapi>=0.110.0" "uvicorn[standard]>=0.28.0" "orjson>=3.9.0"
+              exec uvicorn direct_app:app --host "0.0.0.0" --port 8000 --workers 1 --no-access-log
+          workingDir: /app
+          env:
+            - name: OMP_NUM_THREADS
+              value: "1"
+            - name: MODEL_PATH
+              value: "/models/model.json"
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "2Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          volumeMounts:
+            - name: app-code
+              mountPath: /app/direct_app.py
+              subPath: direct_app.py
+            - name: model-volume
+              mountPath: /models
+      volumes:
+        - name: app-code
+          configMap:
+            name: direct-serving-code
+        - name: model-volume
+          configMap:
+            name: benchmark-model-artifact
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: direct-serving-svc
+  namespace: model-serving-benchmark
+  labels:
+    app.kubernetes.io/name: direct-serving-cpu
+    benchmark.arch: direct
+spec:
+  selector:
+    app.kubernetes.io/name: direct-serving-cpu
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP
