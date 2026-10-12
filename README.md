@@ -5,60 +5,92 @@
 [![KubeRay](https://img.shields.io/badge/KubeRay-v1.4.2-blue.svg)](https://ray-project.github.io/kuberay-helm/)
 [![k6](https://img.shields.io/badge/k6-v0.54.0-purple.svg)](https://k6.io/)
 [![XGBoost](https://img.shields.io/badge/XGBoost-2.1.1-red.svg)](https://xgboost.readthedocs.io/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.2.0-ee4c2c.svg)](https://pytorch.org/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.30-326ce5.svg)](https://kubernetes.io/)
 
-A rigorous, open-source performance benchmark evaluating the proxy and network overhead of **Ray Serve** against a high-performance **Direct Kubernetes Serving** baseline (FastAPI + Uvicorn + orjson) on strictly matched AWS EKS infrastructure (`c6i.2xlarge`).
+A rigorous, open-source performance benchmark evaluating the proxy, queueing, and network overhead of **Ray Serve** against high-performance **Direct Kubernetes Serving** baselines (FastAPI + Uvicorn + orjson) across CPU tabular and GPU embedding workloads on strictly matched AWS EKS infrastructure.
 
 ---
 
-## Goal
+## Table of Contents
 
-The objective of this benchmark is to empirically measure whether Ray Serve's architectural benefits—multi-model orchestration, dynamic batching, and logical queue-based autoscaling—justify its reverse-proxy routing cost compared to native Kubernetes serving.
-
-By evaluating a sub-millisecond CPU tabular inference workload (XGBoost binary classifier, 50 features, 100 trees, depth 6), server execution time is minimized (~0.5–0.8 ms), isolating socket, event loop, serialization, and proxy hops.
+- [Benchmark Goal & Scope](#benchmark-goal--scope)
+- [Phase 2: CPU Tabular Benchmark (XGBoost on c6i.2xlarge)](#phase-2-cpu-tabular-benchmark-xgboost-on-c6i2xlarge)
+  - [1. Latency Percentiles (Absolute & Relative)](#1-latency-percentiles-absolute--relative)
+  - [2. Scoped Workload Analysis & Takeaways](#2-scoped-workload-analysis--takeaways)
+  - [3. Serving Architecture Comparison](#3-serving-architecture-comparison)
+  - [4. Exact Measurement Boundaries & Transit Breakdown](#4-exact-measurement-boundaries--transit-breakdown)
+  - [5. Raw Data Limits & Statistical Rigor](#5-raw-data-limits--statistical-rigor)
+- [Phase 3: GPU Embeddings Benchmark (Sentence-Transformers on NVIDIA L4)](#phase-3-gpu-embeddings-benchmark-sentence-transformers-on-nvidia-l4)
+  - [1. Setup & Hardware Parity](#1-setup--hardware-parity)
+  - [2. Concurrency Sweep Results Matrix](#2-concurrency-sweep-results-matrix)
+  - [3. Visual Performance Curves](#3-visual-performance-curves)
+  - [4. Plain Headline Findings](#4-plain-headline-findings-stated-plainly-no-spin)
+  - [5. Honesty & Reproducibility Disclosures](#5-honesty--reproducibility-disclosures)
+- [How to Reproduce](#how-to-reproduce)
+  - [Reproducing Phase 2 (CPU Tabular)](#reproducing-phase-2-cpu-tabular)
+  - [Reproducing Phase 3 (GPU Embeddings)](#reproducing-phase-3-gpu-embeddings)
+- [Pinned Environment & Versions](#pinned-environment--versions)
+- [Future Roadmap (Phases 4+)](#future-roadmap-phases-4)
+- [Repository Structure](#repository-structure)
+- [License](#license)
 
 ---
 
-## Headline Results
+## Benchmark Goal & Scope
 
-All measurements reflect **15 independent randomized trials** (5 per architecture, 22,508 total requests) at 50 requests/second on 100% matched AWS `c6i.2xlarge` hardware with single-zone co-location (`us-east-1d`).
+The objective of this benchmark suite is to empirically evaluate whether Ray Serve's platform capabilities—multi-model orchestration, dynamic micro-batching, and logical queue-based autoscaling—justify its reverse-proxy routing and serialization costs compared to native Kubernetes serving.
 
-### 1. Absolute Latency First (Worker HAProxy vs. Direct Baseline)
+We evaluate two distinct operational regimes:
+1. **Sub-Millisecond CPU Tabular Inference (Phase 2):** Minimizes model execution time (~0.5–0.8 ms) to isolate bare reverse-proxy and network routing hops.
+2. **Dynamic GPU Micro-Batching (Phase 3):** Evaluates GPU Tensor Core scaling, queue accumulation, and overload protection under concurrency levels from 1 to 64.
+
+---
+
+## Phase 2: CPU Tabular Benchmark (XGBoost on c6i.2xlarge)
+
+Evaluates an open-source **XGBoost Binary Classifier** (50 float features, 100 trees, depth 6) across **15 independent randomized trials** (5 per architecture, 22,508 total requests) at 50 req/s on 100% matched AWS `c6i.2xlarge` hardware with single-zone co-location (`us-east-1d`).
+
+### 1. Latency Percentiles (Absolute & Relative)
+
+#### Absolute Latency First (Worker HAProxy vs. Direct Baseline)
 
 When utilizing Ray Serve's worker-colocated HAProxy routing (`:30000`), absolute latency overhead is negligible:
 
-| Metric | Direct Serving Baseline | Ray Serve (Worker HAProxy :30000) | Absolute Overhead | Absolute Gate ($\le 3.0\text{ ms}$) |
+| Metric | Direct Serving Baseline | Ray Serve (Worker HAProxy :30000) | Absolute Overhead | Absolute Gate ($\\le 3.0\\text{ ms}$) |
 |---|---|---|---|---|
 | **p50 (Median)** | **0.973 ms** (Mean: 1.001 ± 0.083) | **1.274 ms** (Mean: 1.315 ± 0.097) | **+0.301 ms** (~300 µs) | **PASS** |
 | **p90** | **1.151 ms** (Mean: 1.183 ± 0.110) | **1.768 ms** (Mean: 1.761 ± 0.087) | **+0.617 ms** | **PASS** |
 | **p95** | **1.246 ms** (Mean: 1.302 ± 0.170) | **1.856 ms** (Mean: 1.835 ± 0.087) | **+0.610 ms** | **PASS** |
 | **p99** | **1.444 ms** (Mean: 1.533 ± 0.242) | **2.595 ms** (Mean: 2.527 ± 0.702) | **+1.151 ms** (~1.15 ms) | **PASS** |
 
-*By comparison, Ray Serve's default Python Proxy (head node) exhibited **+0.505 ms** at p50 (Median: 1.478 ms, Mean: 1.530 ± 0.145) and **+3.421 ms** at p99 (Median: 4.865 ms, Mean: 6.320 ± 7.338).*
+*By comparison, Ray Serve's default Python Proxy (head node) exhibited **+0.505 ms** at p50 (Median: 1.478 ms) and **+3.421 ms** at p99 (Median: 4.865 ms).*
 
-### 2. Relative Overhead Second
+#### Relative Overhead Second
 
-| Metric | Direct Serving Baseline | Ray Serve (Worker HAProxy :30000) | Relative Overhead | Relative Gate ($\le 10\%$) |
+| Metric | Direct Serving Baseline | Ray Serve (Worker HAProxy :30000) | Relative Overhead | Relative Gate ($\\le 10\\%$) |
 |---|---|---|---|---|
 | **p50** | 0.973 ms | 1.274 ms | **+30.9%** | **FAIL** |
 | **p90** | 1.151 ms | 1.768 ms | **+53.6%** | **FAIL** |
 | **p95** | 1.246 ms | 1.856 ms | **+49.0%** | **FAIL** |
 | **p99** | 1.444 ms | 2.595 ms | **+79.7%** | **FAIL** |
 
-### Contextual Analysis & Scoped Workload Takeaway
+<p align="center">
+  <img src="docs/images/phase2_cpu_latency_comparison.svg" alt="Phase 2: CPU Latency Comparison by Percentile" width="850">
+</p>
 
-Direct Serving on bare Linux sockets achieves an ultra-low baseline ($p50 = 0.973\text{ ms}$, $p99 = 1.444\text{ ms}$). Because the baseline latency is sub-millisecond:
+### 2. Scoped Workload Analysis & Takeaways
+
+Direct Serving on bare Linux sockets achieves an ultra-low baseline ($p50 = 0.973\\text{ ms}$, $p99 = 1.444\\text{ ms}$). Because the baseline latency is sub-millisecond:
 - An incremental ~300 µs reverse-proxy hop mathematically constitutes a **+30.9% relative delta**.
 - An added 1.15 ms at p99 constitutes a **+79.7% relative delta**.
 
 **Scoped Takeaway for This Workload:**
 This benchmark intentionally minimizes model compute (~0.5–0.8 ms inference) to stress reverse-proxy and network routing hops. In this sub-millisecond regime, an absolute overhead of ~0.30 ms (p50) and ~1.15 ms (p99) represents a large relative increase (+31% to +80%) over raw Linux sockets.
-- For ultra-low latency CPU tabular workloads (<2 ms total SLA), teams must weigh this ~0.3 ms proxy cost against Ray Serve's operational benefits.
-- For heavier workloads where inference compute dominates (e.g. 10–500+ ms for neural nets or LLMs), this fixed ~0.3 ms routing overhead represents an increasingly negligible fraction of total latency.
+- **For ultra-low latency CPU tabular workloads (<2 ms total SLA):** Teams must weigh this ~0.3 ms proxy cost against Ray Serve's operational benefits.
+- **For heavier workloads where inference compute dominates (e.g. 10–500+ ms for neural nets or LLMs):** This fixed ~0.3 ms routing overhead represents an increasingly negligible fraction of total latency.
 
----
-
-## Serving Architecture Comparison
+### 3. Serving Architecture Comparison
 
 ```
                          [ External Client: k6 Load Generator ]
@@ -86,135 +118,41 @@ This benchmark intentionally minimizes model compute (~0.5–0.8 ms inference) t
 └─────────────────────────┘    └─────────────────────────┘    └─────────────────────────┘
 ```
 
-### What Worker HAProxy Bypasses vs. Retains
+#### What Worker HAProxy Bypasses vs. Retains
 
 | Component | Default Python Proxy | Worker HAProxy (`:30000`) | Impact |
 |---|---|---|---|
 | **Head Proxy Actor** | Traversed | **Bypassed** | Eliminates Python asyncio event-loop queueing |
 | **Inter-Node RPC Mesh** | Traversed | **Bypassed** | Eliminates cross-pod gRPC forwarding hops |
 | **Actor Lifecycle Management** | Active | **Active** | Managed by KubeRay and Ray GCS controller |
-| **Dynamic Batching (`@serve.batch`)**| Supported | **Supported, not tested** | Available in framework; not decorated in this unbatched CPU test |
+| **Dynamic Batching (`@serve.batch`)**| Supported | **Supported** | Active in framework (evaluated in Phase 3) |
 | **Concurrency Ceiling** | `max_ongoing_requests: 50` | `max_ongoing_requests: 50` | Application backpressure enforced locally |
 | **Metrics & Prometheus** | Active (port 8080) | **Active (port 8080)** | Full observability retained |
 
----
+### 4. Exact Measurement Boundaries & Transit Breakdown
 
-## Exact Latency Measurement Boundaries
+<p align="center">
+  <img src="docs/images/phase2_transit_breakdown.svg" alt="Phase 2: Per-Hop Latency Breakdown" width="850">
+</p>
 
-To ensure complete experimental transparency, the timing boundaries are defined as follows:
+1. **Pure Model Latency (`server_model_latency_ms`):** Timed immediately before `xgb.DMatrix([features])` construction and stopped immediately after `booster.predict(dmat)`. Captures CPU memory buffer construction from 50 floats plus XGBoost C++ histogram booster inference (~0.50–0.61 ms).
+2. **Server Total Latency (`server_total_latency_ms`):** Starts upon receiving the HTTP request body (`await request.body()`), parses JSON with `orjson.loads()`, executes prediction, and serializes response with `orjson.dumps()`.
+3. **Client HTTP Duration (`http_req_duration`):** Full open-loop round-trip duration measured by `k6` from TCP transmission to receipt of the final response byte.
+4. **Estimated Network & Proxy Transit Overhead:** Per-request difference $\\Delta_{\\text{transit}} = T_{\\text{client}} - T_{\\text{server}}$, reflecting network interface transit, Kubernetes ClusterIP routing, reverse-proxy queuing (HAProxy / Python proxy actor), and inter-process socket communication.
 
-1. **Pure Model Latency (`server_model_latency_ms`):**
-   - **Direct Serving:** Timed immediately before `xgb.DMatrix([features])` construction and stopped immediately after `booster.predict(dmat)`.
-   - **Ray Serve:** Timed immediately before `xgb.DMatrix([features])` construction and stopped immediately after `self.booster.predict(dmat)`.
-   - Captures CPU memory buffer construction from a Python list of 50 floats plus XGBoost C++ histogram booster inference.
-2. **Server Total Latency (`server_total_latency_ms`):**
-   - **Direct Serving:** Starts upon receiving the HTTP request body (`await request.body()`), parses JSON with `orjson.loads()`, executes DMatrix + predict, and stops after JSON response serialization (`orjson.dumps()`).
-   - **Ray Serve:** Starts inside `XGBoostDeployment.__call__` upon reading the raw Starlette request body, parses JSON with `orjson.loads()`, executes DMatrix + predict, and stops after JSON serialization (`orjson.dumps()`).
-3. **Client HTTP Duration (`http_req_duration`):**
-   Full open-loop round-trip duration measured by `k6` from TCP socket transmission to receipt of the final response byte.
-4. **Estimated Network & Proxy Transit Overhead:**
-   Per-request difference $\\Delta_{\\text{transit}} = T_{\\text{client}} - T_{\\text{server}}$, reflecting network interface transit, Kubernetes ClusterIP routing, reverse-proxy queuing (HAProxy / Python proxy actor), and inter-process socket communication.
+### 5. Raw Data Limits & Statistical Rigor
 
----
-
-## Raw Data Limits & Tail Latency Interpretation
-
-- **Trial-Level Summaries:** The raw dataset stores trial-level percentile summaries generated by k6's summary export across 5 independent trials of 30 seconds each (150s total per architecture, ~7,500 requests per architecture). Individual per-request timestamp traces were not persisted to disk.
+- **Trial-Level Summaries:** Dataset stores trial-level percentile summaries generated by k6 across 5 independent trials of 30 seconds each (150s total per architecture, ~7,500 requests per architecture).
 - **Warmup Protocol:** Initial socket establishment and JIT / model warmup occurred during the initial connection phase before steady-state recording; trials ran for 30s each under 50 RPS.
-- **Softened p99 Conclusions:** In a 30-second trial at 50 req/s (1,500 requests), p99 reflects approximately the 15 slowest requests. Across 5 sample trials, rare anomalies (such as OS thread preemption, GC activity, or TCP window adjustments) heavily influence p99 variance (as seen in Python Proxy Trial 4). Tail measurements should be understood as sensitivity indicators under micro-bursts rather than steady-state upper bounds.
-
----
-
-## How to Reproduce in a Few Commands
-
-### 1. Clone & Set Up Environment
-
-```bash
-git clone https://github.com/michael-loewenstein/ray-serve-model-serving-benchmark.git
-cd ray-serve-model-serving-benchmark
-
-# Create virtual environment and install dependencies
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r model/requirements.txt
-```
-
-### 2. Generate Deterministic Model & Test Fixtures
-
-```bash
-# Trains 50-feature XGBoost model and exports 1,000 JSON sample payloads (script-relative paths)
-python model/train.py --seed 42
-```
-
-Outputs:
-- `model/artifacts/model.json` (~550 KB)
-- `loadtest/fixtures/sample_payloads.jsonl` (1,000 requests with deterministic seeded IDs)
-
-### 3. Deploy to Kubernetes
-
-Ensure [KubeRay Operator v1.4.2](https://ray-project.github.io/kuberay-helm/) is installed.
-
-```bash
-# Create namespace and application ConfigMaps
-kubectl apply -f k8s/00-namespace.yaml
-kubectl create configmap direct-serving-code --from-file=direct_app.py=k8s/app/direct_app.py -n model-serving-benchmark
-kubectl create configmap ray-serve-code --from-file=ray_serve_app.py=k8s/app/ray_serve_app.py -n model-serving-benchmark
-kubectl create configmap benchmark-model-artifact --from-file=model.json=model/artifacts/model.json -n model-serving-benchmark
-
-# Deploy all 3 architectures
-kubectl apply -f k8s/01-direct-serving.yaml
-kubectl apply -f k8s/02-ray-serve-python-proxy.yaml
-kubectl apply -f k8s/03-ray-serve-worker-haproxy.yaml
-
-# Wait for readiness
-kubectl wait --for=condition=available deployment/direct-serving-cpu -n model-serving-benchmark --timeout=180s
-kubectl wait --for=condition=Ready rayservice/ray-serve-python-proxy -n model-serving-benchmark --timeout=300s
-kubectl wait --for=condition=Ready rayservice/ray-serve-worker-haproxy -n model-serving-benchmark --timeout=300s
-```
-
-### 4. Execute the Randomized Load Test Matrix
-
-> **Warning:** Do NOT test through `kubectl port-forward`. Port-forwarding routes through the Kubernetes API server, injecting multi-millisecond proxy jitter. Run in-cluster via `k8s/04-loadgen-job.yaml` or from an EC2 instance in `us-east-1d`.
-
-```bash
-python loadtest/run_matrix.py --trials 5 --rate-rps 50 --duration 30s
-```
-
-### 5. Reconstruct Tables and Confidence Intervals
-
-```bash
-python results/analyze.py
-```
-
-Outputs the complete statistical breakdown, Student's t 95% confidence intervals, and hypothesis evaluations.
-
----
-
-## Limitations
-
-1. **Workload Scope:** Evaluated exclusively on a single small CPU XGBoost tabular model (50 features, 100 trees, depth 6).
-2. **Traffic Rate:** Tested at a steady arrival rate of 50 req/s. Higher saturation loads (100–500+ req/s) may exhibit different queueing dynamics.
-3. **Single Model Topology:** Evaluates single-model direct HTTP serving; does not benchmark multi-model composite DAGs, fractional GPU sharing, or pipeline parallelism.
-4. **Dynamic Batching:** Not evaluated in this phase; individual unbatched requests were served.
-
----
-
-## Phase 3 Roadmap
-
-- [ ] **Saturation Sweeps & Concurrency Limits:** Benchmark 100 to 500+ req/s to determine maximum sustainable goodput before queue saturation.
-- [ ] **GPU Dynamic Micro-Batching:** Benchmark `sentence-transformers/all-MiniLM-L6-v2` on AWS G5/G6 instances comparing native PyTorch async queues vs. Ray Serve `@serve.batch`.
-- [ ] **Multi-Model Pipelines (DAGs):** End-to-end inference pipelines combining CPU tabular preprocessing, GPU vector embeddings, and LLM generative reranking.
-- [ ] **Autoscaling Economics:** Cost-per-request comparison between Ray Serve's queue-based autoscaler and Kubernetes Horizontal Pod Autoscaler (HPA) under diurnal load spikes.
-
----
+- **Tail Latency Interpretation:** In a 30-second trial at 50 req/s (1,500 requests), p99 reflects approximately the 15 slowest requests. Tail measurements indicate sensitivity under micro-bursts rather than steady-state upper bounds.
 
 ---
 
 ## Phase 3: GPU Embeddings Benchmark (Sentence-Transformers on NVIDIA L4)
 
-A controlled benchmark comparing **Direct Serving (FastAPI + PyTorch + Async Queue Batching)** against **Ray Serve (`@serve.batch` + Worker HAProxy :30000)** on modern cloud GPU infrastructure.
+Evaluates GPU dynamic request micro-batching on modern NVIDIA Tensor Cores by comparing **Direct Serving (FastAPI + PyTorch + Async Queue Batching)** against **Ray Serve (`@serve.batch` + Worker HAProxy :30000)** under client concurrencies from $C=1$ to $C=64$.
 
-### Setup & Hardware Parity
+### 1. Setup & Hardware Parity
 - **Model:** Hugging Face `sentence-transformers/all-MiniLM-L6-v2` in FP16 (`torch.float16`, 384-dimensional dense vectors, 22M parameters).
 - **Workload:** 2,000 realistic e-commerce / catalog search query payloads (sequence lengths varying from 16 to 128 tokens).
 - **GPU Hardware:** AWS **`g6` (NVIDIA L4 24GB Tensor Core GPU)** on AWS EKS (`us-east-1d`).
@@ -223,7 +161,7 @@ A controlled benchmark comparing **Direct Serving (FastAPI + PyTorch + Async Que
 - **Batching Parameters:** Maximum batch size = 32, Batch wait timeout = 5 ms (`0.005s`).
 - **Evaluation Matrix:** Concurrency levels $C \in [1, 4, 8, 16, 32, 64]$, sustained for **30 seconds per level**.
 
-### Results Table
+### 2. Concurrency Sweep Results Matrix
 
 | Architecture | Concurrency ($C$) | Throughput (embeddings/s) | p50 (ms) | p90 (ms) | p95 (ms) | p99 (ms) | Failure Rate |
 |---|---|---|---|---|---|---|---|
@@ -240,36 +178,132 @@ A controlled benchmark comparing **Direct Serving (FastAPI + PyTorch + Async Que
 | **Direct Serving (Async Queue)** | 64 (Overload) | **1,826.88** | **32.15** | 35.86 | **46.57** | **138.18** | 0.00% |
 | **Ray Serve (@serve.batch + HAProxy :30000)** | 64 (Overload) | **1,664.16** | **34.63** | 52.17 | **58.38** | **69.04** | 0.00% |
 
-### Headline Findings (Stated Plainly, No Spin)
+### 3. Visual Performance Curves
 
-1. **Direct serving (custom asyncio queue) wins raw goodput:** Direct serving peaked at 2,271 embeddings/s at $C=32$, compared to 1,672 embeddings/s for Ray Serve. Ray Serve reaches **73.6% of direct serving goodput**, **failing the $\ge 95\%$ goodput gate**.
-2. **At low load, Ray Serve adds ~2.7 ms p95 at $C=1$ (passing the $\le 3.0\text{ ms}$ absolute gate) and +3.4 ms at $C=4$ (failing the gate).**
-3. **Under overload ($C=64$), Ray Serve delivers substantially superior tail latency:** $p99 = \mathbf{69.04\text{ ms}}$ on Ray Serve vs. $138.18\text{ ms}$ on Direct Serving (a **50% lower tail latency**), while maintaining stable throughput.
+<p align="center">
+  <img src="docs/images/phase3_gpu_throughput_scaling.svg" alt="Phase 3: GPU Throughput Scaling Curve" width="850">
+</p>
 
-### Honesty and Reproducibility Disclosures
+<p align="center">
+  <img src="docs/images/phase3_gpu_latency_tail_overload.svg" alt="Phase 3: GPU Latency and Overload Tail" width="950">
+</p>
+
+### 4. Plain Headline Findings (Stated Plainly, No Spin)
+
+1. **Direct serving (custom asyncio queue) wins raw goodput:** Direct serving peaked at 2,271 embeddings/s at $C=32$, compared to 1,672 embeddings/s for Ray Serve. Ray Serve reaches **73.6% of direct serving goodput**, **failing the $\\ge 95\\%$ goodput gate**.
+2. **At low load, Ray Serve adds ~2.7 ms p95 at $C=1$ (passing the $\\le 3.0\\text{ ms}$ absolute gate) and +3.4 ms at $C=4$ (failing the gate).**
+3. **Under overload ($C=64$), Ray Serve delivers substantially superior tail latency:** $p99 = \\mathbf{69.04\\text{ ms}}$ on Ray Serve vs. $138.18\\text{ ms}$ on Direct Serving (a **50% lower tail latency**), while maintaining stable throughput.
+
+### 5. Honesty & Reproducibility Disclosures
 
 - **Single 30-Second Runs per Level:** Each concurrency level is a single 30-second run (unlike Phase 2's 15-trial matrix). There are no multi-trial confidence intervals; small differences are indicative rather than definitive.
-- **Outlier Spike at $C=32$ for Direct Serving:** Direct serving exhibited $p95 = 17.76\text{ ms}$ but jumped to $p99 = 111.65\text{ ms}$. This represents an isolated tail excursion during a single 30-second test window and was **not rerun**.
+- **Outlier Spike at $C=32$ for Direct Serving:** Direct serving exhibited $p95 = 17.76\\text{ ms}$ but jumped to $p99 = 111.65\\text{ ms}$. This represents an isolated tail excursion during a single 30-second test window and was **not rerun**.
 - **Explanation of Model Batch Time Measurement Boundaries:** In Direct Serving, internal timers strictly bracket `model.encode()` around the accumulated tensor batch (~4.5 ms at $C=1$). In Ray Serve, timers bracket the async invocation `await self.batched_encode()` (~10.4 ms at $C=1$), which encompasses Ray's 5 ms batch wait window (`batch_wait_timeout_s=0.005`) plus model execution. This is a measurement boundary difference, not a 2x difference in CUDA execution speed.
 - **Dynamic Batching Configuration:** Both frameworks used `max_batch_size: 32` and `batch_wait_timeout_s: 0.005` (5 ms). These settings were fixed as baseline defaults and were **not hyperparameter tuned** for Ray Serve.
 - **Baseline Scope:** The Direct Serving baseline is a **custom Python asyncio queue implementation** (`asyncio.Queue` background worker), not an enterprise C++ server like NVIDIA Triton or TorchServe. Conclusions apply strictly to this custom FastAPI/PyTorch setup versus Ray Serve.
 - **Scope Limit:** Do not generalize beyond this workload: findings reflect **one small embedding model** (22M parameters) on **one GPU instance family** (AWS G6 / NVIDIA L4).
 
+---
+
+## How to Reproduce
+
+### Reproducing Phase 2 (CPU Tabular)
+
+#### 1. Setup Environment & Generate Deterministic XGBoost Model
+```bash
+git clone https://github.com/michael-loewenstein/ray-serve-model-serving-benchmark.git
+cd ray-serve-model-serving-benchmark
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r model/requirements.txt
+
+# Trains 50-feature XGBoost model and exports 1,000 JSON sample payloads
+python model/train.py --seed 42
+```
+
+#### 2. Deploy to Kubernetes
+```bash
+# Create namespace and ConfigMaps
+kubectl apply -f k8s/00-namespace.yaml
+kubectl create configmap direct-serving-code --from-file=direct_app.py=k8s/app/direct_app.py -n model-serving-benchmark
+kubectl create configmap ray-serve-code --from-file=ray_serve_app.py=k8s/app/ray_serve_app.py -n model-serving-benchmark
+kubectl create configmap benchmark-model-artifact --from-file=model.json=model/artifacts/model.json -n model-serving-benchmark
+
+# Deploy all 3 CPU architectures
+kubectl apply -f k8s/01-direct-serving.yaml
+kubectl apply -f k8s/02-ray-serve-python-proxy.yaml
+kubectl apply -f k8s/03-ray-serve-worker-haproxy.yaml
+
+kubectl wait --for=condition=available deployment/direct-serving-cpu -n model-serving-benchmark --timeout=180s
+kubectl wait --for=condition=Ready rayservice/ray-serve-python-proxy -n model-serving-benchmark --timeout=300s
+kubectl wait --for=condition=Ready rayservice/ray-serve-worker-haproxy -n model-serving-benchmark --timeout=300s
+```
+
+#### 3. Run the Randomized Load Matrix
+```bash
+python loadtest/run_matrix.py --trials 5 --rate-rps 50 --duration 30s
+python results/analyze.py
+```
+
+---
+
+### Reproducing Phase 3 (GPU Embeddings)
+
+#### 1. Generate Query Fixtures
+```bash
+cd benchmarks/gpu-embed
+python3 fixtures/generate_fixtures.py --count 2000 --output fixtures/queries.jsonl
+```
+
+#### 2. Deploy Direct GPU Serving & Ray Serve
+```bash
+kubectl apply -f direct/k8s/ -n model-serving-benchmark
+kubectl wait --for=condition=ready pod -l app=direct-gpu-embed -n model-serving-benchmark --timeout=300s
+
+kubectl apply -f ray/rayservice-embed.yaml -n model-serving-benchmark
+kubectl wait --for=condition=Ready rayservice/rayservice-gpu-embed -n model-serving-benchmark --timeout=300s
+```
+
+#### 3. Execute the Concurrency Sweep
+From a load generator pod in `us-east-1d`:
+```bash
+python3 loadgen/run_embed_matrix.py \
+  --concurrencies 1,4,8,16,32,64 \
+  --duration 30s \
+  --output-dir ../../results/gpu_embed
+```
+
+---
 
 ## Pinned Environment & Versions
 
-| Component | Pinned Version | Description |
+| Component | Pinned Version | Role / Description |
 |---|---|---|
 | **Ray / Ray Serve** | `2.55.1` | Distributed serving runtime (`RAY_SERVE_ENABLE_HA_PROXY=1`) |
 | **ray-haproxy** | `2.8.25` | Worker-colocated HAProxy reverse proxy wheel |
 | **KubeRay Operator** | `v1.4.2` | Kubernetes operator managing `RayService` CRDs |
-| **k6** | `v0.54.0` | Open-loop load generator (`constant-arrival-rate`) |
-| **XGBoost** | `2.1.1` | Model runtime (`tree_method: hist`) |
+| **k6** | `v0.54.0` | Open-loop load generator (`constant-arrival-rate` & VU stages) |
+| **XGBoost** | `2.1.1` | CPU tabular runtime (`tree_method: hist`) |
+| **PyTorch** | `2.2.0` (CUDA 12.1) | GPU Tensor Core runtime (`torch.float16`) |
+| **Sentence-Transformers** | `2.7.0` | Embedding pipeline (`all-MiniLM-L6-v2`, 384-dim) |
 | **FastAPI / Uvicorn** | `0.110.0` / `0.28.0` | Direct serving web framework and ASGI server |
 | **orjson** | `3.9.0` | High-performance C-based JSON serialization |
-| **Kubernetes** | `1.30` | Cloud container orchestration platform |
+| **Kubernetes** | `1.30` | Container orchestration platform |
 | **Python** | `3.11` | Application runtime |
-| **AWS Compute** | `c6i.2xlarge` | Intel Xeon 8375C @ 2.90GHz (8 vCPUs, 16 GiB RAM) |
+| **AWS CPU Compute** | `c6i.2xlarge` | Intel Xeon 8375C @ 2.90GHz (8 vCPUs, 16 GiB RAM) |
+| **AWS GPU Compute** | `g6.xlarge` | NVIDIA L4 24GB Tensor Core GPU (4 vCPUs, 16 GiB RAM) |
+
+---
+
+## Future Roadmap (Phases 4+)
+
+- [x] **Phase 1: Open-Source CPU XGBoost Tabular Baseline**
+- [x] **Phase 2: CPU Saturation & 3-Way Routing Comparison** (Direct vs. Ray Head Proxy vs. Ray Worker HAProxy)
+- [x] **Phase 3: GPU Dynamic Micro-Batching** (`sentence-transformers/all-MiniLM-L6-v2` on NVIDIA L4)
+- [ ] **Phase 4: Large Language Model Serving (vLLM + Llama 3.1 8B)** — TTFT, TPOT, and official Ray LLM Perf benchmark methodology.
+- [ ] **Phase 5: Multi-Model Orchestration & Resource Contention** — Composite DAG pipelines combining CPU tabular preprocessing, GPU vector embeddings, and LLM generative reranking under shared cluster contention.
+- [ ] **Phase 6: Elastic Autoscaling & Cloud Economics** — Cost per 1,000 requests and cost per million tokens comparing Ray Serve logical queue autoscaling against native Kubernetes HPA.
 
 ---
 
@@ -278,12 +312,17 @@ A controlled benchmark comparing **Direct Serving (FastAPI + PyTorch + Async Que
 ```
 ray-serve-model-serving-benchmark/
 ├── LICENSE                      # MIT License
-├── README.md                    # Benchmark overview and headline results
+├── README.md                    # Benchmark overview, headline results, & guides
 ├── .gitignore                   # Ignore rules
 ├── docs/
 │   ├── plan.md                  # Comprehensive benchmark plan & methodology
 │   ├── report.md                # Phase 2 15-trial statistical benchmark report
-│   └── phase3-gpu-embeddings-plan.md # Phase 3 GPU embeddings plan
+│   ├── phase3-gpu-embeddings-plan.md # Phase 3 GPU embeddings plan
+│   └── images/                  # High-resolution benchmark vector charts
+│       ├── phase2_cpu_latency_comparison.svg
+│       ├── phase2_transit_breakdown.svg
+│       ├── phase3_gpu_throughput_scaling.svg
+│       └── phase3_gpu_latency_tail_overload.svg
 ├── benchmarks/
 │   └── gpu-embed/               # Phase 3 GPU benchmark sources & manifests
 │       ├── README.md            # Exact reproduction steps for GPU embeddings

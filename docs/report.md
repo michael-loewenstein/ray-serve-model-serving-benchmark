@@ -31,6 +31,14 @@ The original benchmark specification established two alternative or conjunctive 
 
 ---
 
+
+<p align="center">
+  <img src="images/phase2_cpu_latency_comparison.svg" alt="Phase 2 CPU Latency Comparison" width="850">
+</p>
+<p align="center">
+  <img src="images/phase2_transit_breakdown.svg" alt="Phase 2 Per-Hop Transit Breakdown" width="850">
+</p>
+
 ## 2. Reconciled Request Accounting & Execution Inventory
 
 To ensure complete arithmetic reproducibility, below is the exact request reconciliation across the 15 executed trials:

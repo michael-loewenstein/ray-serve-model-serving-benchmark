@@ -50,6 +50,14 @@ Evaluated under **single 30-second sustained load runs per concurrency level** u
 
 ---
 
+
+<p align="center">
+  <img src="../docs/images/phase3_gpu_throughput_scaling.svg" alt="Phase 3 GPU Throughput Scaling" width="850">
+</p>
+<p align="center">
+  <img src="../docs/images/phase3_gpu_latency_tail_overload.svg" alt="Phase 3 GPU Latency and Overload Tail" width="950">
+</p>
+
 ## 3. Honesty & Reproducibility Disclosures
 
 Before interpreting or publishing these results, the following technical caveats must be explicitly understood:
