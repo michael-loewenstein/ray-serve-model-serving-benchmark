@@ -19,8 +19,8 @@ This directory contains clean, production-grade Kubernetes manifests for evaluat
    helm repo update
    helm install kuberay-operator kuberay/kuberay-operator --version 1.4.2
    ```
-3. **Hardware Matching (Recommended):**
-   For rigorous latency benchmarks, run all deployments on dedicated compute nodes of identical instance families (e.g., AWS `c6i.2xlarge`) within the same Availability Zone to eliminate cross-AZ transit jitter.
+3. **Hardware & Zone Matching:**
+   All manifests pin `nodeSelector` to dedicated compute nodes on AWS `c6i.2xlarge` in `us-east-1d` with parity resource allocations (1 vCPU / 2 GiB memory per replica) to eliminate cross-AZ transit jitter. Adjust `instance-type` and `zone` to match your cluster topology.
 
 ---
 
@@ -70,18 +70,29 @@ kubectl wait --for=condition=Ready rayservice/ray-serve-worker-haproxy -n model-
 
 ---
 
-## Verifying Readiness
+## CRITICAL: In-Cluster Benchmarking vs. Port-Forwarding
+
+> **Important Note on Network Topology:**  
+> **Do NOT run benchmark load tests through `kubectl port-forward`.**  
+> Port-forwarding tunnels all HTTP traffic through the Kubernetes API server and local workstation loopbacks. This introduces 2–10+ ms of socket proxy latency and arbitrary scheduling jitter that completely swamps sub-millisecond serving differences.  
+> 
+> To obtain accurate measurements, execute tests **in-cluster** using the co-located load generator Job (`04-loadgen-job.yaml`) or from an EC2 instance in the exact same Availability Zone.
+
+### Running In-Cluster via k6 Job
 
 ```bash
-# Direct Serving
-kubectl run curl-test --rm -it --restart=Never --image=curlimages/curl -n model-serving-benchmark -- \
-  curl -s http://direct-serving-svc:8000/healthz
+# 1. Create ConfigMaps for load testing script and fixtures
+kubectl create configmap k6-benchmark-script \
+  --from-file=k6_benchmark.js=../loadtest/k6_benchmark.js \
+  -n model-serving-benchmark
 
-# Ray Python Proxy
-kubectl run curl-test --rm -it --restart=Never --image=curlimages/curl -n model-serving-benchmark -- \
-  curl -s http://ray-serve-python-proxy-serve-svc:8000/healthz
+kubectl create configmap k6-benchmark-fixtures \
+  --from-file=sample_payloads.jsonl=../loadtest/fixtures/sample_payloads.jsonl \
+  -n model-serving-benchmark
 
-# Ray Worker HAProxy
-kubectl run curl-test --rm -it --restart=Never --image=curlimages/curl -n model-serving-benchmark -- \
-  curl -s http://ray-serve-worker-haproxy-svc:8000/healthz
+# 2. Run the benchmark Job (configured for Worker HAProxy by default)
+kubectl apply -f 04-loadgen-job.yaml
+
+# 3. Stream k6 execution logs
+kubectl logs -f job/loadgen-k6-benchmark -n model-serving-benchmark
 ```

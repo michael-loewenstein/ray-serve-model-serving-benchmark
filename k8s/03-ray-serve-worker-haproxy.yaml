@@ -24,9 +24,9 @@ spec:
             app.kubernetes.io/name: ray-head-haproxy
             benchmark.arch: ray-worker-haproxy
         spec:
-          # nodeSelector:
-          #   node.kubernetes.io/instance-type: c6i.2xlarge
-          #   topology.kubernetes.io/zone: us-east-1a
+          nodeSelector:
+            node.kubernetes.io/instance-type: c6i.2xlarge
+            topology.kubernetes.io/zone: us-east-1d
           containers:
             - name: ray-head
               image: rayproject/ray:2.55.1-py311
@@ -36,6 +36,8 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: status.podIP
+                - name: PYTHONPATH
+                  value: "/opt/ray_serve_app"
                 - name: OMP_NUM_THREADS
                   value: "1"
                 - name: MODEL_PATH
@@ -51,8 +53,8 @@ spec:
                   cpu: "1000m"
                   memory: "3Gi"
                 limits:
-                  cpu: "2000m"
-                  memory: "5Gi"
+                  cpu: "1000m"
+                  memory: "3Gi"
               volumeMounts:
                 - name: app-code
                   mountPath: /opt/ray_serve_app/ray_serve_app.py
@@ -88,9 +90,9 @@ spec:
               app.kubernetes.io/name: ray-worker-haproxy
               benchmark.arch: ray-worker-haproxy
           spec:
-            # nodeSelector:
-            #   node.kubernetes.io/instance-type: c6i.2xlarge
-            #   topology.kubernetes.io/zone: us-east-1a
+            nodeSelector:
+              node.kubernetes.io/instance-type: c6i.2xlarge
+              topology.kubernetes.io/zone: us-east-1d
             containers:
               - name: ray-worker
                 image: rayproject/ray:2.55.1-py311
@@ -100,6 +102,8 @@ spec:
                     valueFrom:
                       fieldRef:
                         fieldPath: status.podIP
+                  - name: PYTHONPATH
+                    value: "/opt/ray_serve_app"
                   - name: OMP_NUM_THREADS
                     value: "1"
                   - name: MODEL_PATH
@@ -130,8 +134,8 @@ spec:
                     cpu: "1000m"
                     memory: "2Gi"
                   limits:
-                    cpu: "2000m"
-                    memory: "4Gi"
+                    cpu: "1000m"
+                    memory: "2Gi"
                 volumeMounts:
                   - name: app-code
                     mountPath: /opt/ray_serve_app/ray_serve_app.py
@@ -155,16 +159,17 @@ spec:
         route_prefix: /
         import_path: ray_serve_app:app
         runtime_env:
-          pip:
-            - "ray-haproxy==2.8.25"
-            - "xgboost==2.1.1"
-            - "orjson>=3.9.0"
           env_vars:
+            PYTHONPATH: "/opt/ray_serve_app"
             MODEL_PATH: "/models/model.json"
             OMP_NUM_THREADS: "1"
             RAY_SERVE_ENABLE_HA_PROXY: "1"
             RAY_SERVE_RUN_USER_CODE_IN_SEPARATE_THREAD: "0"
             RAY_SERVE_PROXY_PREFER_LOCAL_NODE_ROUTING: "1"
+          pip:
+            - "ray-haproxy==2.8.25"
+            - "xgboost==2.1.1"
+            - "orjson==3.9.0"
         deployments:
           - name: XGBoostDeployment
             num_replicas: 2

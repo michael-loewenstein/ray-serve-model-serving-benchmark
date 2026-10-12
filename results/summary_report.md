@@ -3,26 +3,31 @@
 - **Workload:** Open-Source CPU XGBoost Binary Classifier (50 numeric features, 100 trees, depth 6)
 - **Hardware:** AWS c6i.2xlarge On-Demand (Intel Xeon 8375C @ 2.90GHz)
 - **Co-Location:** Single Availability Zone (us-east-1d), zero cross-AZ transit
-- **Trials:** 5 independent trials per architecture
+- **Total Requests Reconciled:** 22508 across 15 randomized trials
+- **Trials per Architecture:** 5 independent trials
 
 ## 1. Formal Evaluation of Hypothesis H1 (Serving Overhead Gate)
 
 Hypothesis H1 evaluates whether Ray Serve satisfies the absolute gate (overhead <= 3.0 ms) and/or the relative gate (overhead <= 10.0% over Direct Serving baseline).
 
-| Metric | Direct Serving Baseline | Ray Serve (Worker HAProxy :30000) | Absolute Overhead | Relative Overhead | Absolute Gate (<= 3.0 ms) | Relative Gate (<= 10%) |
+| Metric | Direct Serving Baseline (Median) | Ray Serve Worker HAProxy (Median) | Absolute Overhead | Relative Overhead | Absolute Gate (<= 3.0 ms) | Relative Gate (<= 10%) |
 |---|---|---|---|---|---|---|
-| **p50 (Median)** | **0.973 ms** | **1.274 ms** | **+0.301 ms** | **+30.9%** | **PASS** | **FAIL** |
+| **p50** | **0.973 ms** | **1.274 ms** | **+0.301 ms** | **+30.9%** | **PASS** | **FAIL** |
 | **p90** | **1.151 ms** | **1.768 ms** | **+0.617 ms** | **+53.6%** | **PASS** | **FAIL** |
 | **p95** | **1.246 ms** | **1.856 ms** | **+0.610 ms** | **+49.0%** | **PASS** | **FAIL** |
 | **p99** | **1.444 ms** | **2.595 ms** | **+1.151 ms** | **+79.7%** | **PASS** | **FAIL** |
 
 ## 2. Aggregate Latency & Goodput Across Independent Trials
 
-| Architecture | Goodput (req/s) | p50 Median [95% CI] (ms) | p90 Median (ms) | p95 Median [95% CI] (ms) | p99 Median [95% CI] (ms) | Failure Rate (%) |
-|---|---|---|---|---|---|---|
-| **Direct Serving (Uvicorn)** | 50.00 ± 0.017 | **0.973** (±0.083) | 1.151 | **1.246** (±0.170) | **1.444** (±0.242) | 0.00% |
-| **Ray Serve (Python Proxy)** | 50.03 ± 0.020 | **1.478** (±0.145) | 1.959 | **2.069** (±2.781) | **4.865** (±7.338) | 0.00% |
-| **Ray Serve (Worker HAProxy :30000)** | 50.03 ± 0.017 | **1.274** (±0.097) | 1.768 | **1.856** (±0.087) | **2.595** (±0.702) | 0.00% |
+Statistical Note: To maintain statistical rigor with n=5 independent trials, we report both:
+- Non-parametric: **Median [IQR]** and [Min, Max]
+- Parametric: **Mean ± 95% CI** using Student's t distribution (df = 4, t = 2.776)
+
+| Architecture | Goodput (req/s) | p50 Median [IQR] (ms) | p50 Mean ± 95% CI (ms) | p90 Median (ms) | p95 Median [IQR] (ms) | p95 Mean ± 95% CI (ms) | p99 Median [IQR] (ms) | p99 Mean ± 95% CI (ms) | Failure Rate |
+|---|---|---|---|---|---|---|---|---|---|
+| **Direct Serving (Uvicorn)** | 50.00 (Mean: 50.01 ± 0.017) | **0.973** [0.006] | 1.001 ± 0.083 | 1.151 | **1.246** [0.017] | 1.302 ± 0.170 | **1.444** [0.022] | 1.533 ± 0.242 | 0.00% (0/7501) |
+| **Ray Serve (Python Proxy)** | 50.03 (Mean: 50.02 ± 0.020) | **1.478** [0.129] | 1.530 ± 0.145 | 1.959 | **2.069** [0.465] | 3.094 ± 2.781 | **4.865** [3.537] | 6.320 ± 7.338 | 0.00% (0/7503) |
+| **Ray Serve (Worker HAProxy :30000)** | 50.03 (Mean: 50.02 ± 0.017) | **1.274** [0.119] | 1.315 ± 0.097 | 1.768 | **1.856** [0.116] | 1.835 ± 0.087 | **2.595** [0.771] | 2.527 ± 0.702 | 0.00% (0/7504) |
 
 ## 3. Server Compute vs. Network Transit Breakdown (Median ms)
 

@@ -11,6 +11,11 @@ This directory provides the open-loop benchmark harness using [k6](https://k6.io
 - **Max VUs:** 100
 - **Traffic Nature:** Open-loop arrival (independent of server response time, avoiding closed-loop coordinated omission bias).
 
+## IMPORTANT: Network Topology Requirement
+
+> **Do NOT run load tests via `kubectl port-forward`.**  
+> Port-forwarding routes traffic through the Kubernetes API server control plane and workstation network interfaces, injecting multi-millisecond connection queuing and latency jitter. Tests must be run **in-cluster** (via `k8s/04-loadgen-job.yaml`) or from a host co-located in the same AWS Availability Zone (`us-east-1d`).
+
 ## Prerequisites
 
 Install `k6` (pinned: `v0.54.0`):
@@ -25,25 +30,15 @@ echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.i
 sudo apt-get update && sudo apt-get install k6
 ```
 
-## Running an Isolated Trial
-
-To test a single architecture manually:
-
-```bash
-# Direct Serving
-k6 run -e TARGET_HOST=http://localhost:8000 -e RATE_RPS=50 -e STAGE_DURATION=30s k6_benchmark.js
-
-# Ray Serve Python Proxy
-k6 run -e TARGET_HOST=http://localhost:8000 -e RATE_RPS=50 -e STAGE_DURATION=30s k6_benchmark.js
-
-# Ray Serve Worker HAProxy
-k6 run -e TARGET_HOST=http://localhost:8000 -e RATE_RPS=50 -e STAGE_DURATION=30s k6_benchmark.js
-```
-
 ## Running the Automated Randomized Matrix
 
 To eliminate temporal bias (such as cloud noisy neighbor shifts or thermal throttling), `run_matrix.py` shuffles the execution order across the 3 architectures and runs 5 independent trials each:
 
 ```bash
-python run_matrix.py --trials 5 --rate-rps 50 --duration 30s
+python loadtest/run_matrix.py --trials 5 --rate-rps 50 --duration 30s
 ```
+
+Outputs:
+- Individual trial JSON summaries in `results/matrix_runs/`
+- Aggregated raw dataset in `results/raw_trials.json` (ready for `results/analyze.py`)
+- Aggregated tabular CSV in `results/raw_trials.csv`

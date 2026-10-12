@@ -21,13 +21,12 @@ spec:
         app.kubernetes.io/component: inference
         benchmark.arch: direct
     spec:
-      # Hardware matching: Target dedicated compute node pool (e.g., AWS c6i.2xlarge)
-      # nodeSelector:
-      #   node.kubernetes.io/instance-type: c6i.2xlarge
-      #   topology.kubernetes.io/zone: us-east-1a
+      # Hardware and Single-AZ Co-location: Dedicated compute node pool on AWS c6i.2xlarge
+      nodeSelector:
+        node.kubernetes.io/instance-type: c6i.2xlarge
+        topology.kubernetes.io/zone: us-east-1d
       containers:
         - name: server
-          # Replace with your pre-built image or use python:3.11-slim with mounted code
           image: python:3.11-slim
           command:
             - bash
@@ -35,7 +34,7 @@ spec:
             - |
               set -euo pipefail
               apt-get update -qq && apt-get install -y --no-install-recommends libgomp1 > /dev/null 2>&1
-              pip install --quiet --no-cache-dir "xgboost==2.1.1" "fastapi>=0.110.0" "uvicorn[standard]>=0.28.0" "orjson>=3.9.0"
+              pip install --quiet --no-cache-dir "xgboost==2.1.1" "fastapi==0.110.0" "uvicorn[standard]==0.28.0" "orjson==3.9.0"
               exec uvicorn direct_app:app --host "0.0.0.0" --port 8000 --workers 1 --no-access-log
           workingDir: /app
           env:
@@ -64,8 +63,8 @@ spec:
               cpu: "1000m"
               memory: "2Gi"
             limits:
-              cpu: "2000m"
-              memory: "4Gi"
+              cpu: "1000m"
+              memory: "2Gi"
           volumeMounts:
             - name: app-code
               mountPath: /app/direct_app.py

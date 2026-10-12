@@ -6,15 +6,20 @@ This script creates:
    (50 features, 100 trees, max depth 6)
 2. loadtest/fixtures/sample_payloads.jsonl — sample request payloads for k6 load testing
 
-Deterministic execution is guaranteed via explicit random seeds.
+Deterministic execution is guaranteed via explicit random seeds and script-relative paths.
 """
 
 import argparse
 import json
 import os
+import random
 import uuid
 import numpy as np
 import xgboost as xgb
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_OUTPUT_MODEL = os.path.join(SCRIPT_DIR, "artifacts", "model.json")
+DEFAULT_OUTPUT_FIXTURES = os.path.join(SCRIPT_DIR, "..", "loadtest", "fixtures", "sample_payloads.jsonl")
 
 
 def train_and_export(
@@ -23,8 +28,8 @@ def train_and_export(
     n_estimators: int = 100,
     max_depth: int = 6,
     seed: int = 42,
-    output_model_path: str = "artifacts/model.json",
-    output_fixtures_path: str = "../loadtest/fixtures/sample_payloads.jsonl",
+    output_model_path: str = DEFAULT_OUTPUT_MODEL,
+    output_fixtures_path: str = DEFAULT_OUTPUT_FIXTURES,
     n_test_payloads: int = 1000,
 ) -> None:
     # Ensure destination directories exist
@@ -34,6 +39,7 @@ def train_and_export(
 
     print(f"[1/4] Generating synthetic training dataset: {n_samples} samples, {n_features} features (seed={seed})...")
     np.random.seed(seed)
+    rng = random.Random(seed)
     X = np.random.randn(n_samples, n_features).astype(np.float32)
 
     # Synthetic non-linear decision boundary
@@ -74,19 +80,21 @@ def train_and_export(
 
     # Generate test fixtures if requested
     if output_fixtures_path and n_test_payloads > 0:
-        print(f"[4/4] Generating {n_test_payloads} test fixtures to {output_fixtures_path}...")
+        print(f"[4/4] Generating {n_test_payloads} test fixtures to {output_fixtures_path} (seeded IDs)...")
         test_vectors = np.random.randn(n_test_payloads, n_features).astype(np.float32)
 
         with open(output_fixtures_path, "w", encoding="utf-8") as f:
             for i in range(n_test_payloads):
+                # Deterministic UUIDv4 derived from seeded pseudo-random bits
+                req_uuid = str(uuid.UUID(int=rng.getrandbits(128), version=4))
                 record = {
-                    "request_id": str(uuid.uuid4()),
+                    "request_id": req_uuid,
                     "features": [round(float(v), 5) for v in test_vectors[i]],
                 }
                 f.write(json.dumps(record) + "\n")
 
         fixtures_size_kb = os.path.getsize(output_fixtures_path) / 1024.0
-        print(f"      Exported {n_test_payloads} fixtures ({fixtures_size_kb:.1f} KB)")
+        print(f"      Exported {n_test_payloads} deterministic fixtures ({fixtures_size_kb:.1f} KB)")
 
 
 def main():
@@ -96,8 +104,8 @@ def main():
     parser.add_argument("--n-estimators", type=int, default=100, help="Number of boosting rounds (trees)")
     parser.add_argument("--max-depth", type=int, default=6, help="Maximum tree depth")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
-    parser.add_argument("--output-model", default="artifacts/model.json", help="Path to export model.json")
-    parser.add_argument("--output-fixtures", default="../loadtest/fixtures/sample_payloads.jsonl", help="Path to export fixtures")
+    parser.add_argument("--output-model", default=DEFAULT_OUTPUT_MODEL, help="Path to export model.json")
+    parser.add_argument("--output-fixtures", default=DEFAULT_OUTPUT_FIXTURES, help="Path to export fixtures")
     parser.add_argument("--n-test-payloads", type=int, default=1000, help="Number of test JSON payload lines")
     args = parser.parse_args()
 
