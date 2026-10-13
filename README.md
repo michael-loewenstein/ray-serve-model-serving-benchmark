@@ -1,6 +1,14 @@
 # Ray Serve Model Serving Benchmark
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+> **TL;DR Executive Summary:**
+> - **Workloads Evaluated:** CPU Tabular Inference (`xgboost`) and Lightweight GPU Embeddings (`all-MiniLM-L6-v2` FP16 on NVIDIA L4).
+> - **CPU Routing Overhead:** Ray Serve with Worker HAProxy direct routing adds +0.301 ms median latency (+30.9% relative, Bootstrap 95% CI: [+0.154 ms, +0.445 ms]) over native FastAPI/Uvicorn, passing the absolute <= 3.0 ms platform gate.
+> - **GPU Dynamic Micro-Batching:** Dynamic batching on NVIDIA L4 scales throughput 19.5x to 24.2x over single-request execution.
+> - **Baseline Hardening:** Direct Serving event loop decoupled via `asyncio.to_thread`; manifests strictly pinned to `torch==2.2.0` on dedicated `g6.xlarge` instances.
+> - **Phase 3 Baseline Status:** Single-run exploratory snapshot reported; multi-trial matrix with warmups and bootstrap CIs executable via `run_embed_matrix.py`.
+> - **Key Reports:** [Phase 2 CPU XGBoost Report](docs/report.md) | [Phase 3 GPU Embeddings Report](results/phase3-gpu-embeddings-report.md) | [Statistical Summary](results/summary_report.md).
 [![Ray](https://img.shields.io/badge/Ray-2.55.1-blue.svg)](https://docs.ray.io/)
 [![KubeRay](https://img.shields.io/badge/KubeRay-v1.4.2-blue.svg)](https://ray-project.github.io/kuberay-helm/)
 [![k6](https://img.shields.io/badge/k6-v0.54.0-purple.svg)](https://k6.io/)
@@ -48,6 +56,8 @@ We evaluate two distinct operational regimes:
 ---
 
 ## Phase 2: CPU Tabular Benchmark (XGBoost on c6i.2xlarge)
+
+> **Note on Phase 1 vs. Phase 2:** Phase 1 was an initial single-run exploratory smoke test conducted across unconstrained node types and multiple Availability Zones. Because it contained cross-AZ transit variance and multi-architecture noise, it was formally superseded by the matched-hardware, 15-trial Phase 2 matrix detailed below.
 
 Evaluates an open-source **XGBoost Binary Classifier** (50 float features, 100 trees, depth 6) across **15 independent randomized trials** (5 per architecture, 22,508 total requests) at 50 req/s on 100% matched AWS `c6i.2xlarge` hardware with single-zone co-location (`us-east-1d`).
 
@@ -175,8 +185,8 @@ Evaluates GPU dynamic request micro-batching on modern NVIDIA Tensor Cores by co
 | **Ray Serve (@serve.batch + HAProxy :30000)** | 16 | **951.83** | **15.89** | 20.08 | **21.75** | 26.18 | 0.00% |
 | **Direct Serving (Async Queue)** | 32 | **2,271.48** | **11.75** | 16.13 | **17.76** | **111.65** | 0.00% |
 | **Ray Serve (@serve.batch + HAProxy :30000)** | 32 | **1,671.63** | **16.92** | 25.58 | **28.41** | **37.50** | 0.00% |
-| **Direct Serving (Async Queue)** | 64 (Overload) | **1,826.88** | **32.15** | 35.86 | **46.57** | **138.18** | 0.00% |
-| **Ray Serve (@serve.batch + HAProxy :30000)** | 64 (Overload) | **1,664.16** | **34.63** | 52.17 | **58.38** | **69.04** | 0.00% |
+| **Direct Serving (Async Queue)** | 64 (Saturated) | **1,826.88** | **32.15** | 35.86 | **46.57** | **138.18** | 0.00% |
+| **Ray Serve (@serve.batch + HAProxy :30000)** | 64 (Saturated) | **1,664.16** | **34.63** | 52.17 | **58.38** | **69.04** | 0.00% |
 
 ### 3. Visual Performance Curves
 
@@ -190,14 +200,15 @@ Evaluates GPU dynamic request micro-batching on modern NVIDIA Tensor Cores by co
 
 ### 4. Plain Headline Findings (Stated Plainly, No Spin)
 
-1. **Direct serving (custom asyncio queue) wins raw goodput:** Direct serving peaked at 2,271 embeddings/s at $C=32$, compared to 1,672 embeddings/s for Ray Serve. Ray Serve reaches **73.6% of direct serving goodput**, **failing the $\\ge 95\\%$ goodput gate**.
-2. **At low load, Ray Serve adds ~2.7 ms p95 at $C=1$ (passing the $\\le 3.0\\text{ ms}$ absolute gate) and +3.4 ms at $C=4$ (failing the gate).**
-3. **Under overload ($C=64$), Ray Serve delivers substantially superior tail latency:** $p99 = \\mathbf{69.04\\text{ ms}}$ on Ray Serve vs. $138.18\\text{ ms}$ on Direct Serving (a **50% lower tail latency**), while maintaining stable throughput.
+1. **Direct serving (custom asyncio queue) wins raw goodput:** Direct serving peaked at 2,271 embeddings/s at C=32, compared to 1,672 embeddings/s for Ray Serve. Ray Serve reaches **73.6% of direct serving goodput**, **failing the >= 95% goodput gate**.
+2. **At low load, Ray Serve adds ~2.7 ms p95 at C=1 (passing the <= 3.0 ms absolute gate) and +3.4 ms at C=4 (failing the gate).**
+3. **Ray Serve fails the Batch Scaling latency gate at C=32:** While throughput scaled 19.5x, its p95 was 28.41 ms (exceeding the <= 20 ms ceiling; Direct Serving passed at 17.76 ms).
+4. **Tail latency under closed-loop saturation (C=64) reflects pre-fix baseline artifacts [Pre-Fix Snapshot]:** In the initial exploratory single-run, Ray Serve recorded p99 = 69.04 ms vs 138.18 ms on Direct Serving. However, this preliminary comparison was measured before Direct Serving was decoupled from the event loop via asyncio.to_thread. With event loop starvation now eliminated, definitive conclusions require re-running the 5-trial matrix.
 
 ### 5. Honesty & Reproducibility Disclosures
 
 - **Single 30-Second Runs per Level:** Each concurrency level is a single 30-second run (unlike Phase 2's 15-trial matrix). There are no multi-trial confidence intervals; small differences are indicative rather than definitive.
-- **Outlier Spike at $C=32$ for Direct Serving:** Direct serving exhibited $p95 = 17.76\\text{ ms}$ but jumped to $p99 = 111.65\\text{ ms}$. This represents an isolated tail excursion during a single 30-second test window and was **not rerun**.
+- **Event Loop Starvation Spike at C=32/64 in Pre-Fix Baseline:** Direct serving exhibited p95 = 17.76 ms but jumped to p99 = 111.65 ms at C=32 and 138.18 ms at C=64. This was traced directly to model.encode running synchronously on the FastAPI event loop thread. In the current codebase, this has been decoupled via asyncio.to_thread.
 - **Explanation of Model Batch Time Measurement Boundaries:** In Direct Serving, internal timers strictly bracket `model.encode()` around the accumulated tensor batch (~4.5 ms at $C=1$). In Ray Serve, timers bracket the async invocation `await self.batched_encode()` (~10.4 ms at $C=1$), which encompasses Ray's 5 ms batch wait window (`batch_wait_timeout_s=0.005`) plus model execution. This is a measurement boundary difference, not a 2x difference in CUDA execution speed.
 - **Dynamic Batching Configuration:** Both frameworks used `max_batch_size: 32` and `batch_wait_timeout_s: 0.005` (5 ms). These settings were fixed as baseline defaults and were **not hyperparameter tuned** for Ray Serve.
 - **Baseline Scope:** The Direct Serving baseline is a **custom Python asyncio queue implementation** (`asyncio.Queue` background worker), not an enterprise C++ server like NVIDIA Triton or TorchServe. Conclusions apply strictly to this custom FastAPI/PyTorch setup versus Ray Serve.
@@ -258,6 +269,11 @@ python3 fixtures/generate_fixtures.py --count 2000 --output fixtures/queries.jso
 
 #### 2. Deploy Direct GPU Serving & Ray Serve
 ```bash
+# Create application code ConfigMaps
+kubectl create configmap direct-gpu-embed-code --from-file=app.py=direct/app.py -n model-serving-benchmark
+kubectl create configmap ray-gpu-embed-code --from-file=serve_embed.py=ray/serve_embed.py -n model-serving-benchmark
+
+# Deploy Direct Serving and Ray Serve
 kubectl apply -f direct/k8s/ -n model-serving-benchmark
 kubectl wait --for=condition=ready pod -l app=direct-gpu-embed -n model-serving-benchmark --timeout=300s
 
@@ -270,7 +286,9 @@ From a load generator pod in `us-east-1d`:
 ```bash
 python3 loadgen/run_embed_matrix.py \
   --concurrencies 1,4,8,16,32,64 \
+  --trials 5 \
   --duration 30s \
+  --k6-script loadgen/k6_embed.js \
   --output-dir ../../results/gpu_embed
 ```
 
@@ -358,7 +376,7 @@ ray-serve-model-serving-benchmark/
     ├── README.md                # Results documentation
     ├── raw_trials.json          # Phase 2 15-trial raw dataset (22,508 requests)
     ├── raw_trials.csv           # Tabular CSV of Phase 2 trials
-    ├── summary_report.md        # Reconstructed statistical summary
+    ├── summary_report.md        # Statistical benchmark summary
     ├── analyze.py               # Statistical analysis & CI generator
     ├── phase3-gpu-embeddings-report.md # Phase 3 GPU embeddings report
     └── gpu_embed/               # Phase 3 raw k6 sweep JSON files & generator

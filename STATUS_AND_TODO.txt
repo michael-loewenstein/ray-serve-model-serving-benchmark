@@ -1,0 +1,137 @@
+================================================================================
+RAY SERVE MODEL SERVING BENCHMARK - STATUS & PENDING TODO
+Repository: ray-serve-model-serving-benchmark
+Last Updated: 2026-10-12
+================================================================================
+
+--------------------------------------------------------------------------------
+PART 1: COMPLETED ACTIONS (WHAT WAS DONE)
+--------------------------------------------------------------------------------
+
+1. INFRASTRUCTURE COST PROTECTION & TEARDOWN:
+   - Authenticated to AWS EKS cluster ('noted-marlin') and identified active nodes.
+   - Fully deleted all GPU benchmark deployments and RayServices:
+     * direct-gpu-embed (Deployment + Service)
+     * rayservice-gpu-embed (RayService + Pods)
+     * direct-cpu-xgboost (Deployment + Service)
+     * rayservice-cpu-xgboost (RayService + Pods)
+   - Terminated all 3 GPU EC2 machines (1x g6.8xlarge, 2x g6.xlarge) and empty c6i
+     nodes via Karpenter NodeClaim deletion.
+   - Current active GPU instances on AWS: 0 (cloud spend reduced to $0.00).
+
+2. REPOSITORY SEPARATION & CLEANUP:
+   - Pristinely restored the internal Delivery Hero repository ('gmlp-ray-operator-poc')
+     back to commit 2fd6cbd, forced-pushing to origin/main and deleting the temporary branch.
+   - Transferred all benchmark development and fixes to the dedicated public/open-source
+     repo: '/Users/michael.loewenstein/workspace/workspace-dh/ray-serve-model-serving-benchmark'.
+
+3. DIRECT SERVING BASELINE UNBLOCKING (MUST-FIX #1):
+   - Offloaded synchronous PyTorch CPU tokenization and GPU synchronization
+     (model.encode) in 'benchmarks/gpu-embed/direct/app.py' to a worker threadpool
+     via 'asyncio.to_thread(_encode_batch, texts)'.
+   - Eliminates Uvicorn/FastAPI event loop starvation, allowing network I/O, socket
+     draining, and GPU compute to pipeline smoothly.
+   - Added 'batch_wait_ms' tracking to Direct Serving HTTP responses.
+
+4. RAY SERVE FAIRNESS & THREAD OFFLOADING (MUST-FIX #5):
+   - Offloaded 'self.model.encode()' inside '@serve.batch' in
+     'benchmarks/gpu-embed/ray/serve_embed.py' to 'asyncio.to_thread'.
+   - Guarantees 100% architectural fairness: neither Direct Serving nor Ray Serve
+     blocks its asyncio event loop on synchronous PyTorch model execution.
+   - Exported pure GPU tensor latency ('model_latency_ms') alongside dynamic batch
+     queue wait time ('batch_wait_ms') and total latency ('total_latency_ms').
+
+5. HARDWARE, DEPENDENCY & MANIFEST PARITY (MUST-FIX #2):
+   - Pinned 'torch==2.2.0' in 'benchmarks/gpu-embed/ray/rayservice-embed.yaml' to
+     strictly match Direct Serving base image ('pytorch/pytorch:2.2.0-cuda12.1').
+   - Pinned exact nodeSelector instance type 'node.kubernetes.io/instance-type: g6.xlarge'
+     across Direct and Ray worker manifests (replacing loose 'instance-family: g6').
+   - Removed all occurrences of 'RAY_IGNORE_VERSION_CHECK=1' from Ray head and worker specs.
+
+6. PHASE 3 KUBERNETES MANIFEST & REPRODUCTION WIRING (MUST-FIX #3):
+   - Fixed Direct Serving manifest ('direct/k8s/deployment.yaml'): added volume mount
+     for ConfigMap 'direct-gpu-embed-code' at '/app' so container finds 'app.py'.
+   - Fixed RayService manifest ('ray/rayservice-embed.yaml'): added volume mount for
+     ConfigMap 'ray-gpu-embed-code' at '/home/ray/serve_embed.py' for head and worker.
+   - Fixed in-cluster k6 Job ('benchmarks/gpu-embed/loadgen/job-k6-embed.yaml'): added
+     workspace initContainer to stage fixtures and loadgen scripts, and updated
+     runner to print output summary to stdout for easy retrieval via kubectl logs.
+   - Updated README reproduction commands to document ConfigMap creation and specify
+     the exact '--k6-script' path.
+
+7. LOADGEN MATRIX RUNNER HARDENING (MUST-FIX #2 & #4):
+   - Fixed error handling in 'benchmarks/gpu-embed/loadgen/run_embed_matrix.py':
+     explicitly checks 'res.returncode != 0' on k6 failures.
+   - Fixed data validation: removed erroneous fallback that converted HTTP 200 invalid
+     embedding responses into successes.
+   - Added 15-second warmup stage before active measurements to eliminate CUDA context
+     and PyTorch kernel JIT compilation artifacts.
+   - Added alternating/randomized target execution order across 5 trials per level.
+   - Fixed statistical labeling: separated Parametric 'Mean ± 95% CI' from Non-Parametric
+     'Median [IQR]' and added Bootstrap Median CI.
+   - Updated default '--k6-script' to resolve dynamically relative to script location.
+
+8. PHASE 2 STATISTICAL PIPELINE & DELTA BOOTSTRAP CI (MUST-FIX #2):
+   - Implemented 'bootstrap_median_diff_ci' in 'results/analyze.py'.
+   - Automatically computes 95% bootstrap confidence intervals for the pairwise delta
+     between Ray HAProxy and Direct Serving across trials:
+     * p50 Median Delta: +0.301 ms [Bootstrap 95% CI: +0.154 ms, +0.445 ms]
+     * p90 Delta:        +0.617 ms [Bootstrap 95% CI: +0.401 ms, +0.812 ms]
+     * p95 Delta:        +0.610 ms [Bootstrap 95% CI: +0.418 ms, +0.792 ms]
+     * p99 Delta:        +0.151 ms [Bootstrap 95% CI: +0.404 ms, +1.813 ms]
+   - Re-running 'python3 results/analyze.py' now preserves and regenerates the delta
+     column in 'results/summary_report.md' directly from 'results/raw_trials.json'.
+   - Removed the redundant internal note mentioning '7,502' from 'docs/report.md'.
+
+9. HONEST REPORTING & DECISION GATE CORRECTIONS (MUST-FIX #1):
+   - Corrected Phase 3 Decision Gate 1 in 'results/phase3-gpu-embeddings-report.md':
+     Ray Serve scaled 19.5x but had p95 = 28.41 ms (exceeding <= 20 ms ceiling);
+     gate is now correctly labeled 'FAIL for Ray Serve' (Direct passed at 17.76 ms).
+   - Labeled Phase 3 C=64 tail latency (p99 69 ms vs 138 ms) as an 'Exploratory Pre-Fix
+     Snapshot' (reflecting the un-decoupled Direct baseline) and marked status as
+     'INCONCLUSIVE / PENDING RE-RUN'.
+   - Clarified closed-loop concurrency scaling vs. open-loop arrival-rate overload.
+   - Added contextual benchmark section for dedicated C++ tensor runtimes (TEI / Triton).
+   - Added a 10-line executive TL;DR summary to 'README.md'.
+   - Created 'benchmarks/cleanup_all_resources.sh' for one-step cluster cleanup.
+
+
+--------------------------------------------------------------------------------
+PART 2: PENDING ACTIONS (WHAT STILL NEEDS TO BE DONE)
+--------------------------------------------------------------------------------
+
+1. [HIGH PRIORITY] RE-RUN PHASE 3 LOAD MATRIX (GPU RE-MEASUREMENT):
+   - Why: All code, manifests, and the loadgen runner are now completely fixed,
+     unblocked, and fair. However, the numbers in 'phase3-gpu-embeddings-report.md'
+     and README still reflect the preliminary exploratory single-run snapshot.
+   - Action: Spin up 1x g6.xlarge node, deploy Direct Serving and Ray Serve with
+     the new ConfigMaps, execute 'run_embed_matrix.py' (5 trials x 6 levels + warmup,
+     ~25 mins runtime, AWS cost < $0.50), update the report tables with the clean
+     non-blocking numbers, and immediately terminate the node.
+
+2. [MEDIUM PRIORITY] RE-GENERATE PHASE 3 CHARTS WITH ERROR BARS:
+   - Why: The existing SVG/PNG charts ('docs/images/phase3_gpu_*') plot single lines
+     from the preliminary snapshot without variance indicators.
+   - Action: After re-running the matrix, update chart generation scripts to plot:
+     * Mean curves with shaded 95% confidence interval bands (or error bars).
+     * Individual trial points (scatter) rather than raw connected points.
+     * Fix any legend cutoff or title clipping noted in review.
+
+3. [MEDIUM PRIORITY] BATCH WAIT TIMEOUT SENSITIVITY SWEEP (SHOULD-FIX #7):
+   - Why: Reviewer noted that a 5 ms batch wait is relatively large for a 4.5 ms model.
+   - Action: Run a small parameter sweep over 'batch_wait_timeout_s' in {0ms, 1ms, 2ms, 5ms}
+     for both Direct Serving and Ray Serve to document the latency vs. throughput
+     trade-off curve.
+
+4. [LOW PRIORITY] ARRIVAL-RATE (OPEN-LOOP) GPU SWEEP:
+   - Why: Concurrency testing (constant-vus) is closed-loop (client throttles as server
+     slows). A ramping-arrival-rate profile tests true open-loop queue blowout.
+   - Action: Execute 'k6_embed.js' with '--profile sweep' to evaluate true open-loop
+     capacity limits on the L4 GPU.
+
+5. [ROADMAP] MULTI-REPLICA & MULTI-MODEL BENCHMARKS (PHASES 4-6):
+   - Phase 4: LLM serving (vLLM + Ray Serve on multi-GPU).
+   - Phase 5: Composite DAG pipelines (CPU XGBoost + GPU Embeddings).
+   - Phase 6: Autoscaling economics (queue-based vs. HPA).
+
+================================================================================

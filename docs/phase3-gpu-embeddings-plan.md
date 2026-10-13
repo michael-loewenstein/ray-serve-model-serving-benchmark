@@ -15,7 +15,7 @@ Both architectures and the benchmark driver run under 100% hardware and zone par
 - **Node Selector:**
   ```yaml
   nodeSelector:
-    karpenter.k8s.aws/instance-family: g6
+    node.kubernetes.io/instance-type: g6.xlarge
     topology.kubernetes.io/zone: us-east-1d
     karpenter.sh/capacity-type: "on-demand"
   ```
@@ -54,7 +54,7 @@ Both architectures and the benchmark driver run under 100% hardware and zone par
 
 ### Task 3.2: Direct Serving GPU Implementation
 - **Target Files:**
-  - `benchmarks/gpu-embed/direct/app.py`: FastAPI server implementing an async background consumer loop with `asyncio.Queue`. Arriving requests queue up; the worker dequeues up to 32 requests or after a 5 ms timeout, invokes `model.encode(texts, batch_size=len(texts))`, and resolves client futures.
+  - `benchmarks/gpu-embed/direct/app.py`: FastAPI server implementing an async background consumer loop with `asyncio.Queue`. Arriving requests queue up; the worker dequeues up to 32 requests or after a 5 ms timeout, invokes `model.encode(texts, batch_size=len(texts))` offloaded to `asyncio.to_thread` to preserve HTTP event loop responsiveness, and resolves client futures.
   - `benchmarks/gpu-embed/direct/Dockerfile`: Lightweight container based on `pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime`.
   - `benchmarks/gpu-embed/direct/k8s/deployment.yaml`: Deployment targeting `g6.xlarge` in `us-east-1d` requesting 1 GPU.
   - `benchmarks/gpu-embed/direct/k8s/service.yaml`: ClusterIP service `direct-gpu-embed-svc` on port 8000.

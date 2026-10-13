@@ -27,8 +27,11 @@ const TEST_PROFILE = __ENV.TEST_PROFILE || 'steady'; // 'steady', 'concurrency',
 function getScenarios() {
   if (TEST_PROFILE === 'concurrency' || CONCURRENCY > 0) {
     const vus = CONCURRENCY > 0 ? CONCURRENCY : 16;
+    // Closed-loop concurrency scaling: exactly 'vus' concurrent clients in flight.
+    // Clients wait for response before issuing next request; request rate naturally
+    // throttles as latency increases (no queue blowout, unlike open-loop arrival rate).
     return {
-      fixed_concurrency: {
+      closed_loop_concurrency: {
         executor: 'constant-vus',
         vus: vus,
         duration: STAGE_DURATION,

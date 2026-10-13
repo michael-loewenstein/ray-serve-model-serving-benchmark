@@ -15,7 +15,7 @@ spec:
         import_path: serve_embed:app
         runtime_env:
           pip:
-            - "torch"
+            - "torch==2.2.0"
             - "transformers>=4.40.0,<4.49.0"
             - "sentence-transformers>=2.5.0,<3.5.0"
             - "accelerate"
@@ -56,8 +56,10 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: status.podIP
-                - name: RAY_IGNORE_VERSION_CHECK
-                  value: "1"
+              volumeMounts:
+                - name: app-code
+                  mountPath: /home/ray/serve_embed.py
+                  subPath: serve_embed.py
               resources:
                 requests:
                   cpu: "1000m"
@@ -65,6 +67,10 @@ spec:
                 limits:
                   cpu: "2000m"
                   memory: "5Gi"
+          volumes:
+            - name: app-code
+              configMap:
+                name: ray-gpu-embed-code
     workerGroupSpecs:
       - groupName: gpu-worker
         replicas: 1
@@ -83,7 +89,7 @@ spec:
               app: ray-worker-gpu-embed
           spec:
             nodeSelector:
-              karpenter.k8s.aws/instance-family: g6
+              node.kubernetes.io/instance-type: g6.xlarge
               topology.kubernetes.io/zone: us-east-1d
               karpenter.sh/capacity-type: "on-demand"
             tolerations:
@@ -104,8 +110,6 @@ spec:
                     value: "0"
                   - name: RAY_SERVE_PROXY_PREFER_LOCAL_NODE_ROUTING
                     value: "1"
-                  - name: RAY_IGNORE_VERSION_CHECK
-                    value: "1"
                 ports:
                   - containerPort: 30000
                     name: serve-direct
@@ -121,6 +125,10 @@ spec:
                   periodSeconds: 5
                   timeoutSeconds: 3
                   failureThreshold: 20
+                volumeMounts:
+                  - name: app-code
+                    mountPath: /home/ray/serve_embed.py
+                    subPath: serve_embed.py
                 resources:
                   requests:
                     cpu: "2000m"
@@ -130,6 +138,10 @@ spec:
                     cpu: "4000m"
                     memory: "12Gi"
                     nvidia.com/gpu: "1"
+            volumes:
+              - name: app-code
+                configMap:
+                  name: ray-gpu-embed-code
 ---
 apiVersion: v1
 kind: Service

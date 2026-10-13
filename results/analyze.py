@@ -53,6 +53,26 @@ def bootstrap_median_ci(vals: List[float], n_bootstraps: int = 10000, alpha: flo
     return round(boot_medians[low_idx], 3), round(boot_medians[high_idx], 3)
 
 
+def bootstrap_median_diff_ci(vals_a: List[float], vals_b: List[float], n_bootstraps: int = 10000, alpha: float = 0.05, seed: int = 42) -> Tuple[float, float]:
+    """Compute empirical percentile bootstrap CI for the difference of medians (b - a)."""
+    if not vals_a or not vals_b:
+        return 0.0, 0.0
+    rng = random.Random(seed)
+    n_a = len(vals_a)
+    n_b = len(vals_b)
+    boot_diffs = []
+    for _ in range(n_bootstraps):
+        sample_a = sorted([vals_a[rng.randrange(n_a)] for _ in range(n_a)])
+        sample_b = sorted([vals_b[rng.randrange(n_b)] for _ in range(n_b)])
+        med_a = sample_a[n_a // 2] if n_a % 2 == 1 else (sample_a[n_a // 2 - 1] + sample_a[n_a // 2]) / 2.0
+        med_b = sample_b[n_b // 2] if n_b % 2 == 1 else (sample_b[n_b // 2 - 1] + sample_b[n_b // 2]) / 2.0
+        boot_diffs.append(med_b - med_a)
+    boot_diffs.sort()
+    low_idx = int((alpha / 2.0) * n_bootstraps)
+    high_idx = int((1.0 - alpha / 2.0) * n_bootstraps)
+    return round(boot_diffs[low_idx], 3), round(boot_diffs[high_idx], 3)
+
+
 def compute_sample_stats(values: List[float]) -> Dict[str, Any]:
     """Compute comprehensive parametric (mean CI) and non-parametric (median, IQR, bootstrap CI) statistics."""
     if not values:
@@ -147,7 +167,7 @@ def generate_tables(meta: Dict[str, Any], grouped: Dict[str, List[Dict[str, Any]
         "Hypothesis H1 evaluates whether Ray Serve satisfies the absolute gate (overhead <= 3.0 ms) "
         "and/or the relative gate (overhead <= 10.0% over Direct Serving baseline).\n"
     )
-    lines.append("| Metric | Direct Serving Baseline (Median) | Ray Serve Worker HAProxy (Median) | Absolute Overhead | Relative Overhead | Absolute Gate (<= 3.0 ms) | Relative Gate (<= 10%) |")
+    lines.append("| Metric | Direct Serving Baseline (Median) | Ray Serve Worker HAProxy (Median) | Absolute Delta [Bootstrap 95% CI] | Relative Delta | Absolute Gate (<= 3.0 ms) | Relative Gate (<= 10%) |")
     lines.append("|---|---|---|---|---|---|---|")
 
     haproxy_trials = grouped.get("Ray Serve (Worker HAProxy :30000)", [])
@@ -164,9 +184,12 @@ def generate_tables(meta: Dict[str, Any], grouped: Dict[str, List[Dict[str, Any]
             rel_pct = (abs_diff / d_val) * 100.0
             abs_pass = "PASS" if abs_diff <= 3.0 else "FAIL"
             rel_pass = "PASS" if rel_pct <= 10.0 else "FAIL"
+            d_runs = [t[metric_key] for t in direct_trials]
+            h_runs = [t[metric_key] for t in haproxy_trials]
+            b_low, b_high = bootstrap_median_diff_ci(d_runs, h_runs)
             lines.append(
                 f"| **{label}** | **{d_val:.3f} ms** | **{h_val:.3f} ms** | "
-                f"**+{abs_diff:.3f} ms** | **+{rel_pct:.1f}%** | "
+                f"**+{abs_diff:.3f} ms** [+{b_low:.3f}, +{b_high:.3f}] | **+{rel_pct:.1f}%** | "
                 f"**{abs_pass}** | **{rel_pass}** |"
             )
 

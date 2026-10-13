@@ -7,6 +7,7 @@ Features:
 - orjson serialization
 """
 
+import asyncio
 import os
 import time
 from typing import List
@@ -48,14 +49,22 @@ class EmbeddingDeployment:
             boundaries=_boundaries,
         )
 
-    @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.005)
-    async def batched_encode(self, texts: List[str]) -> List[List[float]]:
+    def _encode_batch(self, batch_texts: List[str]):
         t0 = time.perf_counter()
         with torch.inference_mode():
-            embeddings = self.model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
+            embeddings = self.model.encode(batch_texts, batch_size=len(batch_texts), convert_to_numpy=True)
         t1 = time.perf_counter()
-        self._batch_latency.observe((t1 - t0) * 1000.0)
-        return embeddings.tolist()
+        pure_model_ms = (t1 - t0) * 1000.0
+        return embeddings, pure_model_ms
+
+    @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.005)
+    async def batched_encode(self, texts: List[str]):
+        # Offload CPU tokenization and GPU kernel execution to a worker thread
+        # so the Ray replica actor event loop is not blocked during computation.
+        embeddings, pure_model_ms = await asyncio.to_thread(self._encode_batch, texts)
+        self._batch_latency.observe(pure_model_ms)
+        # Return 1-to-1 result with pure GPU model latency
+        return [(emb.tolist(), pure_model_ms) for emb in embeddings]
 
     async def __call__(self, request: Request) -> Response:
         path = request.url.path
@@ -91,18 +100,19 @@ class EmbeddingDeployment:
         req_id = payload.get("id", "")
 
         t_m0 = time.perf_counter()
-        embedding = await self.batched_encode(text)
+        embedding, pure_model_ms = await self.batched_encode(text)
         t_m1 = time.perf_counter()
 
         t1 = time.perf_counter()
         total_ms = (t1 - t0) * 1000.0
-        model_ms = (t_m1 - t_m0) * 1000.0
+        batch_wait_ms = (t_m1 - t_m0) * 1000.0
         self._total_latency.observe(total_ms)
 
         body = orjson.dumps({
             "id": req_id,
             "embedding": embedding,
-            "model_latency_ms": round(model_ms, 3),
+            "model_latency_ms": round(pure_model_ms, 3),
+            "batch_wait_ms": round(batch_wait_ms, 3),
             "total_latency_ms": round(total_ms, 3),
         })
         return Response(body, media_type="application/json")

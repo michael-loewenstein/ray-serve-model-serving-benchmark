@@ -58,11 +58,16 @@ async def batch_worker():
             texts = [item[0] for item in batch]
             futures = [item[1] for item in batch]
 
-            t0 = time.perf_counter()
-            with torch.inference_mode():
-                embeddings = model.encode(texts, batch_size=len(texts), convert_to_numpy=True)
-            t1 = time.perf_counter()
-            model_ms = (t1 - t0) * 1000.0
+            def _encode_batch(batch_texts: List[str]):
+                t0_inf = time.perf_counter()
+                with torch.inference_mode():
+                    embs = model.encode(batch_texts, batch_size=len(batch_texts), convert_to_numpy=True)
+                t1_inf = time.perf_counter()
+                return embs, (t1_inf - t0_inf) * 1000.0
+
+            # Offload CPU tokenization and GPU inference to a worker thread so the
+            # FastAPI/uvicorn asyncio loop is not blocked from handling incoming network traffic.
+            embeddings, model_ms = await asyncio.to_thread(_encode_batch, texts)
 
             # Resolve all client futures
             for i, fut in enumerate(futures):
@@ -129,12 +134,14 @@ async def embed(request: Request) -> Response:
 
     t1 = time.perf_counter()
     total_ms = (t1 - t0) * 1000.0
+    batch_wait_ms = max(0.0, total_ms - model_ms)
 
     return Response(
         orjson.dumps({
             "id": req_id,
             "embedding": embedding,
             "model_latency_ms": round(model_ms, 3),
+            "batch_wait_ms": round(batch_wait_ms, 3),
             "total_latency_ms": round(total_ms, 3),
         }),
         media_type="application/json",

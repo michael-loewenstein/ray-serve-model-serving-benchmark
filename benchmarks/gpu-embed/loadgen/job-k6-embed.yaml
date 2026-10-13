@@ -1,0 +1,79 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-bench-gpu-embed
+  namespace: model-serving-benchmark
+  labels:
+    app: benchmark-gpu-driver
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: benchmark-gpu-driver
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        topology.kubernetes.io/zone: us-east-1d
+        karpenter.sh/capacity-type: "on-demand"
+      initContainers:
+        - name: init-workspace
+          image: python:3.11-slim
+          command:
+            - bash
+            - -c
+            - |
+              mkdir -p /workspace/fixtures /workspace/loadgen /workspace/results/gpu_embed
+              cp /app-code/* /workspace/loadgen/
+              cp /app-fixtures/* /workspace/fixtures/
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: loadgen-code
+              mountPath: /app-code
+            - name: fixtures-data
+              mountPath: /app-fixtures
+      containers:
+        - name: k6-runner
+          image: python:3.11-slim
+          workingDir: /workspace
+          command:
+            - bash
+            - -c
+            - |
+              apt-get update -qq && apt-get install -y --no-install-recommends curl ca-certificates jq
+              curl -s https://github.com/grafana/k6/releases/download/v0.50.0/k6-v0.50.0-linux-amd64.tar.gz -L | tar xvz --strip-components 1 -C /usr/local/bin
+              python3 loadgen/run_embed_matrix.py \
+                --concurrencies 1,4,8,16,32,64 \
+                --trials 5 \
+                --duration 30s \
+                --warmup-duration 15s \
+                --k6-script loadgen/k6_embed.js \
+                --output-dir /workspace/results/gpu_embed
+              echo "=== Matrix Run Complete. Output Summary: ==="
+              cat /workspace/results/gpu_embed/statistical_summary_concurrency.md
+          env:
+            - name: DIRECT_URL
+              value: "http://direct-gpu-embed-svc:8000"
+            - name: RAY_URL
+              value: "http://rayservice-gpu-embed-haproxy-svc:8000"
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "4Gi"
+            limits:
+              cpu: "4000m"
+              memory: "8Gi"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+      volumes:
+        - name: workspace
+          emptyDir: {}
+        - name: loadgen-code
+          configMap:
+            name: k6-gpu-embed-code
+        - name: fixtures-data
+          configMap:
+            name: gpu-embed-fixtures

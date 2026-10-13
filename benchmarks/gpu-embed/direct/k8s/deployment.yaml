@@ -16,7 +16,7 @@ spec:
         app: direct-gpu-embed
     spec:
       nodeSelector:
-        karpenter.k8s.aws/instance-family: g6
+        node.kubernetes.io/instance-type: g6.xlarge
         topology.kubernetes.io/zone: us-east-1d
         karpenter.sh/capacity-type: "on-demand"
       tolerations:
@@ -49,6 +49,9 @@ spec:
             initialDelaySeconds: 40
             periodSeconds: 5
             failureThreshold: 12
+          volumeMounts:
+            - name: app-code
+              mountPath: /app
           resources:
             requests:
               cpu: "2000m"
@@ -58,3 +61,7 @@ spec:
               cpu: "4000m"
               memory: "12Gi"
               nvidia.com/gpu: "1"
+      volumes:
+        - name: app-code
+          configMap:
+            name: direct-gpu-embed-code

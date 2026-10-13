@@ -60,7 +60,6 @@ In open-loop load generation (`k6` `constant-arrival-rate`), the iteration timer
 - **Ray Worker HAProxy:** 1 trial with 1,500 reqs (Trial 1) + 4 trials with 1,501 reqs (Trials 2, 3, 4, 5) = **7,504 requests**.
 - **Sum:** $7,501 + 7,503 + 7,504 = \mathbf{22,508\text{ total requests}}$.
 
-*(Note: This reconciles a minor typographical oversight in preliminary internal summaries that previously reported Python Proxy as 7,502; the raw trial-level totals confirm 7,503 actual requests).*
 
 No unrecorded warmup requests or extraneous runs were included in these totals. Every single request was recorded and validated.
 

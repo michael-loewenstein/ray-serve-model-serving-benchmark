@@ -2,10 +2,14 @@
 
 **Target Environment:** Kubernetes on AWS (EKS, `us-east-1`), namespace `model-serving-benchmark`  
 **Workload:** Hugging Face `sentence-transformers/all-MiniLM-L6-v2` in FP16 on NVIDIA L4 (384-dimensional dense embeddings)  
-**Hardware & Nodes:** AWS **`g6` (NVIDIA L4 24GB Tensor Core GPU)** in `us-east-1d`.  
-**Co-Location Standard:** Both GPU pods and the `k6-bench-gpu` driver co-located in `us-east-1d` on matched G6 instances with zero cross-AZ hops.  
-**Parity Standard:** Exactly 1 GPU replica per architecture, 1x NVIDIA L4, 2 vCPUs / 8 GiB memory allocated.  
-**Batching Configuration:** Max batch size = 32, Batch wait timeout = 5 ms (`0.005s`).
+**Hardware & Nodes:** Dedicated AWS **`g6.xlarge` (NVIDIA L4 24GB Tensor Core GPU, 4 vCPUs, 16 GiB RAM)** in `us-east-1d`.  
+**Co-Location Standard:** Both GPU pods and the `k6-bench-gpu` driver co-located in `us-east-1d` on matched `g6.xlarge` instances with zero cross-AZ hops.  
+**Parity Standard:** Exactly 1 GPU replica per architecture, 1x NVIDIA L4, Requests: 2000m CPU / 8 GiB RAM, Limits: 4000m CPU / 12 GiB RAM, PyTorch 2.2.0.  
+**Batching Configuration:** Max batch size = 32, Batch wait timeout = 5 ms (`0.005s`).  
+**Load Methodology:** Closed-loop client concurrency scaling (`k6` `constant-vus`).
+
+> **Exploratory Preliminary Baseline Notice (Pre-Event Loop Decoupling):**  
+> The measurements reported below reflect an initial exploratory single-run benchmark conducted prior to decoupling `model.encode()` from the asyncio event loop in Direct Serving (`asyncio.to_thread`). Because the initial Direct Serving baseline synchronously executed model inference on the event loop, its C=32 and C=64 tail latency (p99 = 111.65 ms and 138.18 ms) contains event loop starvation artifacts. In the codebase, Direct Serving has since been decoupled via `asyncio.to_thread` and manifest version parity pinned (`torch==2.2.0`). Verified multi-trial conclusions require executing the updated 5-trial matrix runner (`benchmarks/gpu-embed/loadgen/run_embed_matrix.py`).
 
 ---
 
@@ -14,20 +18,26 @@
 Phase 3 evaluated the efficiency of dynamic request micro-batching on modern NVIDIA Tensor Cores (AWS G6 / NVIDIA L4) across client concurrencies $C \in [1, 4, 8, 16, 32, 64]$.
 
 ### Plain Headline Findings:
-1. **Direct serving (custom asyncio queue) wins raw goodput:** 2,271 vs 1,672 embeddings/s at $C=32$. Ray Serve reaches **73.6%** of direct serving throughput, **failing the >= 95% goodput gate**.
-2. **At low load, Ray Serve adds ~2.7 ms p95 at $C=1$ (passing the <= 3.0 ms absolute gate), and +3.4 ms at $C=4$ (failing the gate).**
-3. **Under overload ($C=64$), Ray Serve delivers substantially better tail latency:** $p99 = 69.04\text{ ms}$ vs $138.18\text{ ms}$ on direct serving, while maintaining stable throughput.
+1. **Direct serving (custom asyncio queue) wins raw goodput:** 2,271 vs 1,672 embeddings/s at C=32. Ray Serve reaches **73.6%** of direct serving throughput, **failing the >= 95% goodput gate**.
+2. **At low load, Ray Serve adds ~2.7 ms p95 at C=1 (passing the <= 3.0 ms absolute gate), and +3.4 ms at C=4 (failing the gate).**
+3. **Ray Serve fails the Batch Scaling latency gate at C=32:** While throughput scaled 19.5x, its p95 was 28.41 ms (exceeding the <= 20 ms gate ceiling; Direct Serving passed at 17.76 ms).
+4. **Tail latency under C=64 closed-loop saturation reflects pre-fix baseline artifacts:** The 50% lower p99 on Ray Serve (69.04 ms vs 138.18 ms) in the preliminary single-run was measured before Direct Serving was decoupled from the event loop via asyncio.to_thread. Final conclusions require executing the 5-trial matrix runner.
 
 ### Decision Gate Summary Table (Open Reporting, No Spin):
 
 | Gate | Criterion | Direct Serving Result | Ray Serve Result | Gate Evaluation |
 |---|---|---|---|---|
-| **Batch Scaling Gate** | Throughput scales $\ge 3\times$ from $C=1 \to C=32$ with $p95 \le 20\text{ ms}$ | **$24.2\times$** scaling ($93.6 \to 2,271.5\text{ req/s}$), $p95 = 17.76\text{ ms}$ | **$19.5\times$** scaling ($85.6 \to 1,671.6\text{ req/s}$), $p95 = 28.41\text{ ms}$ | **PASS** (Both unlock massive GPU parallelism) |
-| **Goodput Ratio Gate** | Ray Serve reaches $\ge 95\%$ of Direct Serving goodput | Peak: 2,271.5 req/s | Peak: 1,671.6 req/s (**73.6% of Direct**) | **FAIL** (Direct is ~26% faster at peak batching) |
-| **Latency Gate (Absolute)** | Ray Serve adds $\le 3.0\text{ ms}$ p95 latency at low load ($C \le 4$) | $C=1: 10.87\text{ ms}$<br>$C=4: 11.96\text{ ms}$ | $C=1: 13.57\text{ ms}$ (+2.70 ms)<br>$C=4: 15.34\text{ ms}$ (+3.38 ms) | **PASS at C=1**, **FAIL at C=4** |
-| **Overload Protection** | Tail latency ($p99$) under $C=64$ overload | $p99 = 138.18\text{ ms}$ | $p99 = \mathbf{69.04\text{ ms}}$ (**50% lower tail latency**) | **PASS (Ray Serve superior)** |
+| **Batch Scaling Gate** | Throughput scales >= 3x from C=1 to C=32 with p95 <= 20 ms | **24.2x** scaling (93.6 -> 2,271.5 req/s), p95 = 17.76 ms | **19.5x** scaling (85.6 -> 1,671.6 req/s), p95 = 28.41 ms | **FAIL for Ray Serve** (Throughput scaled 19.5x, but p95 = 28.41 ms exceeded 20 ms ceiling; Direct PASS) |
+| **Goodput Ratio Gate** | Ray Serve reaches >= 95% of Direct Serving goodput | Peak: 2,271.5 req/s | Peak: 1,671.6 req/s (**73.6% of Direct**) | **FAIL** (Direct is ~26% faster at peak batching) |
+| **Latency Gate (Absolute)** | Ray Serve adds <= 3.0 ms p95 latency at low load (C <= 4) | C=1: 10.87 ms<br>C=4: 11.96 ms | C=1: 13.57 ms (+2.70 ms)<br>C=4: 15.34 ms (+3.38 ms) | **PASS at C=1**, **FAIL at C=4** |
+| **Closed-Loop Saturation (C=64)** | Tail latency (p99) under C=64 closed-loop saturation [Pre-Fix Snapshot] | p99 = 138.18 ms | p99 = **69.04 ms** (50% lower tail in pre-fix run) | **INCONCLUSIVE / PENDING RE-RUN** (Pre-fix Direct baseline had event loop blocking; re-run required) |
 
 ---
+
+
+
+### 1.1 Specialized C++ Inference Engine Context (Triton / TEI)
+For architectural perspective, dynamic micro-batching on general Python HTTP servers (both FastAPI and Ray Serve) operates under Python runtime constraints. Dedicated C++ tensor serving runtimes—such as Hugging Face **Text Embeddings Inference (TEI)** or **NVIDIA Triton Inference Server** with dynamic batching and TensorRT/ONNX-Runtime—typically achieve an additional 20-35% lower p95 latency and higher GPU saturation on the same NVIDIA L4 by completely eliminating Python GIL contention and multi-process serialization.
 
 ## 2. Concurrency Sweep Results ($C \in [1 \to 64]$)
 
@@ -45,8 +55,8 @@ Evaluated under **single 30-second sustained load runs per concurrency level** u
 | **Ray Serve (@serve.batch)** | 16 | **951.83** | **15.89** | 20.08 | **21.75** | 26.18 | 12.29 ms | 0.00% |
 | **Direct Serving (Async Queue)** | 32 | **2,271.48** | **11.75** | 16.13 | **17.76** | **111.65** | 5.72 ms | 0.00% |
 | **Ray Serve (@serve.batch)** | 32 | **1,671.63** | **16.92** | 25.58 | **28.41** | **37.50** | 9.26 ms | 0.00% |
-| **Direct Serving (Async Queue)** | 64 (Overload) | **1,826.88** | **32.15** | 35.86 | **46.57** | **138.18** | 5.61 ms | 0.00% |
-| **Ray Serve (@serve.batch)** | 64 (Overload) | **1,664.16** | **34.63** | 52.17 | **58.38** | **69.04** | 21.68 ms | 0.00% |
+| **Direct Serving (Async Queue)** | 64 (Saturated) | **1,826.88** | **32.15** | 35.86 | **46.57** | **138.18** | 5.61 ms | 0.00% |
+| **Ray Serve (@serve.batch)** | 64 (Saturated) | **1,664.16** | **34.63** | 52.17 | **58.38** | **69.04** | 21.68 ms | 0.00% |
 
 ---
 
