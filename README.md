@@ -23,6 +23,7 @@ A rigorous, open-source performance benchmark evaluating the proxy, queueing, an
 ## Table of Contents
 
 - [Benchmark Goal & Scope](#benchmark-goal--scope)
+- [Phase 1: Initial Exploratory Discovery (CPU XGBoost)](#phase-1-initial-exploratory-discovery-cpu-xgboost)
 - [Phase 2: CPU Tabular Benchmark (XGBoost on c6i.2xlarge)](#phase-2-cpu-tabular-benchmark-xgboost-on-c6i2xlarge)
   - [1. Latency Percentiles (Absolute & Relative)](#1-latency-percentiles-absolute--relative)
   - [2. Scoped Workload Analysis & Takeaways](#2-scoped-workload-analysis--takeaways)
@@ -54,6 +55,23 @@ We evaluate two distinct operational regimes:
 2. **Dynamic GPU Micro-Batching (Phase 3):** Evaluates GPU Tensor Core scaling, queue accumulation, and overload protection under concurrency levels from 1 to 64.
 
 ---
+
+---
+
+## Phase 1: Initial Exploratory Discovery (CPU XGBoost)
+
+Phase 1 was an initial exploratory benchmark (4,624 requests at 50 req/s) designed to measure baseline reverse-proxy routing overhead between Direct Serving and Ray Serve.
+
+### The Routing Architecture Discovery
+KubeRay default architecture routes ingress through a head node **Python Proxy actor** (`serve-svc`), introducing serialization and async event-loop queueing under load. Bypassing the head node via **Worker HAProxy** (`haproxy-svc` on port 30000) dropped median latency from 2.47 ms to 1.60 ms and cut p99 tail latency by over 5 ms:
+
+| Routing Architecture | Path | p50 Latency | p90 Latency | p95 Latency | p99 Latency | Failure Rate |
+|---|---|---|---|---|---|---|
+| **Direct Serving (K8s)** | ClusterIP to Uvicorn Pod | **1.81 ms** | **2.19 ms** | **2.33 ms** | **2.76 ms** | 0.02% |
+| **Ray Serve (Python Head Proxy)** | `serve-svc` to Head Proxy to Worker Actor | 2.47 ms | 3.59 ms | 5.96 ms | 15.27 ms | 1.01% |
+| **Ray Serve (Worker HAProxy :30000)** | `haproxy-svc` to Worker HAProxy to Worker Actor | **1.60 ms** | **2.31 ms** | **3.41 ms** | **10.03 ms** | **0.00%** |
+
+*Why Phase 1 Was Superseded:* In Phase 1, pods were scheduled across multiple AWS Availability Zones and mixed CPU architectures (ARM head, Intel workers). To eliminate cross-AZ latency noise and obtain rigorous publication-grade statistics, Phase 1 was formally superseded by the **Phase 2 matched 15-trial matrix** below. Detailed findings: [Phase 1 Report](results/phase1-cpu-xgboost-report.md).
 
 ## Phase 2: CPU Tabular Benchmark (XGBoost on c6i.2xlarge)
 
