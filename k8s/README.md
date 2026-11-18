@@ -5,8 +5,10 @@ This directory contains clean, production-grade Kubernetes manifests for evaluat
 | Architecture | Manifest | Routing Topology | In-Cluster Service Endpoint |
 |---|---|---|---|
 | **A: Direct Serving** | `01-direct-serving.yaml` | Client $\to$ K8s Service $\to$ Uvicorn Pod | `http://direct-serving-svc:8000/infer` |
-| **B: Ray Serve Python Proxy** | `02-ray-serve-python-proxy.yaml` | Client $\to$ K8s Service $\to$ Ray Head Node (`SERVE_PROXY_ACTOR`) $\to$ Worker Actor | `http://ray-serve-python-proxy-serve-svc:8000/infer` |
-| **C: Ray Serve Worker HAProxy** | `03-ray-serve-worker-haproxy.yaml` | Client $\to$ Dedicated Service $\to$ Worker HAProxy (`:30000`) $\to$ Worker Actor | `http://ray-serve-worker-haproxy-svc:8000/infer` |
+| **B: Ray Serve Default Proxy** | `02-ray-serve-python-proxy.yaml` | Client $\to$ KubeRay `serve-svc` $\to$ per-pod Python Serve proxy (`:8000`) $\to$ replica actor | `http://ray-serve-python-proxy-serve-svc:8000/infer` |
+| **C: Ray Serve Direct Ingress** | `03-ray-serve-worker-haproxy.yaml` | Client $\to$ dedicated Service $\to$ worker pod `targetPort 30000` $\to$ replica's direct-ingress HTTP server | `http://ray-serve-worker-haproxy-svc:8000/infer` (historical service name) |
+
+> **Port roles (Ray 2.55.1):** `:8000` is the Ray Serve HTTP ingress — HAProxy when `RAY_SERVE_ENABLE_HA_PROXY=1`, otherwise the Python proxy. `:30000–31000` are the direct-ingress HTTP servers inside Serve replicas. Architecture C's Service maps `8000 → targetPort 30000`, so it **bypasses HAProxy**. Full request paths: [docs/topology-and-request-path.md](../docs/topology-and-request-path.md).
 
 ---
 
@@ -20,7 +22,7 @@ This directory contains clean, production-grade Kubernetes manifests for evaluat
    helm install kuberay-operator kuberay/kuberay-operator --version 1.4.2
    ```
 3. **Hardware & Zone Matching:**
-   All manifests pin `nodeSelector` to dedicated compute nodes on AWS `c6i.2xlarge` in `us-east-1d` with parity resource allocations (1 vCPU / 2 GiB memory per replica) to eliminate cross-AZ transit jitter. Adjust `instance-type` and `zone` to match your cluster topology.
+   All manifests pin `nodeSelector` to AWS `c6i.2xlarge` nodes in `us-east-1d` with parity resource allocations (1 vCPU / 2 GiB memory per replica) to eliminate cross-AZ transit jitter. The nodes are **not dedicated**: no anti-affinity or `topologySpreadConstraints` are configured, so pods from different architectures can share a node. Adjust `instance-type` and `zone` to match your cluster topology.
 
 ---
 
@@ -54,14 +56,14 @@ kubectl apply -f 01-direct-serving.yaml
 kubectl wait --for=condition=available deployment/direct-serving-cpu -n model-serving-benchmark --timeout=180s
 ```
 
-### 3. Deploy Ray Serve with Python Proxy (Architecture B)
+### 3. Deploy Ray Serve Default Proxy (Architecture B)
 
 ```bash
 kubectl apply -f 02-ray-serve-python-proxy.yaml
 kubectl wait --for=condition=Ready rayservice/ray-serve-python-proxy -n model-serving-benchmark --timeout=300s
 ```
 
-### 4. Deploy Ray Serve with Worker HAProxy (Architecture C)
+### 4. Deploy Ray Serve Direct Ingress (Architecture C)
 
 ```bash
 kubectl apply -f 03-ray-serve-worker-haproxy.yaml
@@ -90,7 +92,7 @@ kubectl create configmap k6-benchmark-fixtures \
   --from-file=sample_payloads.jsonl=../loadtest/fixtures/sample_payloads.jsonl \
   -n model-serving-benchmark
 
-# 2. Run the benchmark Job (configured for Worker HAProxy by default)
+# 2. Run the benchmark Job (configured for Architecture C direct ingress by default)
 kubectl apply -f 04-loadgen-job.yaml
 
 # 3. Stream k6 execution logs

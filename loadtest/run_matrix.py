@@ -32,11 +32,13 @@ TARGETS = {
         "url": os.environ.get("DIRECT_URL", "http://direct-serving-svc:8000"),
     },
     "ray_python": {
-        "name": "Ray Serve (Python Proxy)",
+        "name": "Ray Serve (Default Python Proxy :8000)",
         "url": os.environ.get("RAY_PYTHON_URL", "http://ray-serve-python-proxy-serve-svc:8000"),
     },
+    # Historical key/URL names: the target Service maps port 8000 -> targetPort 30000,
+    # which is Ray Serve direct ingress, not HAProxy. See docs/topology-and-request-path.md.
     "ray_haproxy": {
-        "name": "Ray Serve (Worker HAProxy :30000)",
+        "name": "Ray Serve (Direct Ingress :30000)",
         "url": os.environ.get("RAY_HAPROXY_URL", "http://ray-serve-worker-haproxy-svc:8000"),
     },
 }

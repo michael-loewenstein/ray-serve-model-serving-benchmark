@@ -167,10 +167,10 @@ def generate_tables(meta: Dict[str, Any], grouped: Dict[str, List[Dict[str, Any]
         "Hypothesis H1 evaluates whether Ray Serve satisfies the absolute gate (overhead <= 3.0 ms) "
         "and/or the relative gate (overhead <= 10.0% over Direct Serving baseline).\n"
     )
-    lines.append("| Metric | Direct Serving Baseline (Median) | Ray Serve Worker HAProxy (Median) | Absolute Delta [Bootstrap 95% CI] | Relative Delta | Absolute Gate (<= 3.0 ms) | Relative Gate (<= 10%) |")
+    lines.append("| Metric | Direct Serving Baseline (Median) | Ray Serve Direct Ingress (Median) | Absolute Delta [Bootstrap 95% CI] | Relative Delta | Absolute Gate (<= 3.0 ms) | Relative Gate (<= 10%) |")
     lines.append("|---|---|---|---|---|---|---|")
 
-    haproxy_trials = grouped.get("Ray Serve (Worker HAProxy :30000)", [])
+    haproxy_trials = grouped.get("Ray Serve (Direct Ingress :30000)", [])
     if haproxy_trials and direct_trials:
         metrics_eval = [
             ("p50", "p50_ms", direct_p50),

@@ -1,3 +1,9 @@
+# Ray Serve GPU embeddings benchmark.
+# Port roles (Ray 2.55.1): :8000 is the HTTP ingress -- HAProxy when
+# RAY_SERVE_ENABLE_HA_PROXY=1, otherwise the Python proxy. :30000-31000 are the
+# direct-ingress HTTP servers inside Serve replicas. The Service below maps
+# port 8000 -> targetPort 30000, so it connects straight to the replica and
+# bypasses HAProxy. See docs/topology-and-request-path.md.
 apiVersion: ray.io/v1
 kind: RayService
 metadata:
@@ -143,6 +149,8 @@ spec:
                 configMap:
                   name: ray-gpu-embed-code
 ---
+# Service exposing the GPU replica's direct-ingress HTTP server (:30000) on port 8000.
+# Historical name retains the "haproxy" token; HAProxy on :8000 is not traversed.
 apiVersion: v1
 kind: Service
 metadata:

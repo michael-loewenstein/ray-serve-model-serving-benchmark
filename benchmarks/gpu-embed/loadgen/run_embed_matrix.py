@@ -26,8 +26,10 @@ TARGETS = {
         "name": "Direct Serving (Async Queue Batcher)",
         "url": os.environ.get("DIRECT_URL", "http://direct-gpu-embed-svc:8000"),
     },
+    # Historical key/URL name: the Service maps port 8000 -> targetPort 30000,
+    # which is Ray Serve direct ingress, not HAProxy.
     "ray_haproxy": {
-        "name": "Ray Serve (@serve.batch + HAProxy :30000)",
+        "name": "Ray Serve (@serve.batch + Direct Ingress :30000)",
         "url": os.environ.get("RAY_URL", "http://rayservice-gpu-embed-haproxy-svc:8000"),
     },
 }

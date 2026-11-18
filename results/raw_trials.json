@@ -16,7 +16,7 @@
       "nominal_requests_per_trial": 1500,
       "nominal_total_requests": 22500,
       "actual_total_requests": 22508,
-      "reconciliation_explanation": "Across 15 trials of 30s at 50 RPS, k6 constant-arrival-rate timer microsecond tick boundaries resulted in 8 trials emitting 1,501 requests and 7 trials emitting 1,500 requests: Direct Serving (4x1500 + 1x1501 = 7,501), Ray Python Proxy (2x1500 + 3x1501 = 7,503), Ray Worker HAProxy (1x1500 + 4x1501 = 7,504). Total: 22,508 requests."
+      "reconciliation_explanation": "Across 15 trials of 30s at 50 RPS, k6 constant-arrival-rate timer microsecond tick boundaries resulted in 8 trials emitting 1,501 requests and 7 trials emitting 1,500 requests: Direct Serving (4x1500 + 1x1501 = 7,501), Ray Default Python Proxy (2x1500 + 3x1501 = 7,503), Ray Direct Ingress (1x1500 + 4x1501 = 7,504). Total: 22,508 requests."
     }
   },
   "trials": [
@@ -106,7 +106,7 @@
       "network_transit_p50_ms": 0.444
     },
     {
-      "architecture": "Ray Serve (Python Proxy)",
+      "architecture": "Ray Serve (Default Python Proxy :8000)",
       "target_key": "ray_python",
       "trial_number": 1,
       "total_requests": 1501,
@@ -123,7 +123,7 @@
       "network_transit_p50_ms": 0.896
     },
     {
-      "architecture": "Ray Serve (Python Proxy)",
+      "architecture": "Ray Serve (Default Python Proxy :8000)",
       "target_key": "ray_python",
       "trial_number": 2,
       "total_requests": 1500,
@@ -140,7 +140,7 @@
       "network_transit_p50_ms": 0.896
     },
     {
-      "architecture": "Ray Serve (Python Proxy)",
+      "architecture": "Ray Serve (Default Python Proxy :8000)",
       "target_key": "ray_python",
       "trial_number": 3,
       "total_requests": 1501,
@@ -157,7 +157,7 @@
       "network_transit_p50_ms": 0.896
     },
     {
-      "architecture": "Ray Serve (Python Proxy)",
+      "architecture": "Ray Serve (Default Python Proxy :8000)",
       "target_key": "ray_python",
       "trial_number": 4,
       "total_requests": 1500,
@@ -174,7 +174,7 @@
       "network_transit_p50_ms": 0.896
     },
     {
-      "architecture": "Ray Serve (Python Proxy)",
+      "architecture": "Ray Serve (Default Python Proxy :8000)",
       "target_key": "ray_python",
       "trial_number": 5,
       "total_requests": 1501,
@@ -191,7 +191,7 @@
       "network_transit_p50_ms": 0.896
     },
     {
-      "architecture": "Ray Serve (Worker HAProxy :30000)",
+      "architecture": "Ray Serve (Direct Ingress :30000)",
       "target_key": "ray_haproxy",
       "trial_number": 1,
       "total_requests": 1500,
@@ -208,7 +208,7 @@
       "network_transit_p50_ms": 0.709
     },
     {
-      "architecture": "Ray Serve (Worker HAProxy :30000)",
+      "architecture": "Ray Serve (Direct Ingress :30000)",
       "target_key": "ray_haproxy",
       "trial_number": 2,
       "total_requests": 1501,
@@ -225,7 +225,7 @@
       "network_transit_p50_ms": 0.709
     },
     {
-      "architecture": "Ray Serve (Worker HAProxy :30000)",
+      "architecture": "Ray Serve (Direct Ingress :30000)",
       "target_key": "ray_haproxy",
       "trial_number": 3,
       "total_requests": 1501,
@@ -242,7 +242,7 @@
       "network_transit_p50_ms": 0.709
     },
     {
-      "architecture": "Ray Serve (Worker HAProxy :30000)",
+      "architecture": "Ray Serve (Direct Ingress :30000)",
       "target_key": "ray_haproxy",
       "trial_number": 4,
       "total_requests": 1501,
@@ -259,7 +259,7 @@
       "network_transit_p50_ms": 0.709
     },
     {
-      "architecture": "Ray Serve (Worker HAProxy :30000)",
+      "architecture": "Ray Serve (Direct Ingress :30000)",
       "target_key": "ray_haproxy",
       "trial_number": 5,
       "total_requests": 1501,

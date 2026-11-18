@@ -3,7 +3,8 @@
 Optimized with:
 - Direct Starlette Request/Response (bypassing FastAPI router overhead)
 - orjson parsing and serialization
-- HAProxy routing support via worker port 30000
+- Direct-ingress routing support via the replica HTTP server on port 30000
+  (HAProxy/Python ingress on port 8000 is bypassed by the benchmark Service)
 - Custom latency histograms for server and model execution
 """
 

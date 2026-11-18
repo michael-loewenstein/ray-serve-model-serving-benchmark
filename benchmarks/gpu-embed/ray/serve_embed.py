@@ -3,7 +3,8 @@
 Features:
 - SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2") on CUDA in FP16
 - Ray Serve native @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.005)
-- Worker HAProxy port 30000 fast-path routing
+- Direct-ingress fast path: the test Service targets the replica HTTP server on :30000
+  (Ray's HAProxy/Python ingress on :8000 is bypassed)
 - orjson serialization
 """
 

@@ -1,5 +1,9 @@
-# Architecture C: Ray Serve with Worker-Colocated HAProxy (:30000)
-# Fast-path routing: Ingress/ClusterIP -> Worker Pod HAProxy (:30000) -> Worker Actor Local Socket
+# Architecture C: Ray Serve Direct Ingress (:30000)
+# Request path: Client -> ClusterIP Service (port 8000) -> worker pod targetPort 30000
+#               -> Serve replica's direct-ingress HTTP server -> replica __call__
+# NOTE: In Ray 2.55.1, HAProxy listens on :8000 (http_options.port); :30000-31000 are the
+#       direct-ingress HTTP servers inside Serve replicas. This Service therefore bypasses
+#       HAProxy even though RAY_SERVE_ENABLE_HA_PROXY=1. See docs/topology-and-request-path.md.
 apiVersion: ray.io/v1
 kind: RayService
 metadata:
@@ -116,7 +120,7 @@ spec:
                     value: "1"
                 ports:
                   - containerPort: 30000
-                    name: serve-haproxy
+                    name: serve-direct
                   - containerPort: 8080
                     name: metrics
                 readinessProbe:
@@ -177,7 +181,9 @@ spec:
             ray_actor_options:
               num_cpus: 1.0
 ---
-# Dedicated Service exposing Worker HAProxy (:30000) directly to clients on port 8000
+# Dedicated Service exposing the replica direct-ingress server (:30000) on Service port 8000.
+# The service name retains the historical "worker-haproxy" token for reproducibility.
+# HAProxy on each worker's :8000 is intentionally not used by this arm.
 apiVersion: v1
 kind: Service
 metadata:
@@ -191,7 +197,7 @@ spec:
     app.kubernetes.io/name: ray-worker-haproxy
     ray.io/node-type: worker
   ports:
-    - name: http-haproxy
+    - name: http-direct
       port: 8000
       targetPort: 30000
       protocol: TCP

@@ -1,5 +1,8 @@
-# Architecture B: Ray Serve with Head Node Python Proxy
-# Standard Ray Serve routing path: Ingress/ClusterIP -> Head SERVE_PROXY_ACTOR -> Worker Actor
+# Architecture B: Ray Serve default Python proxy
+# Request path: Client -> KubeRay-generated serve-svc (:8000, all serve-labeled pods)
+#               -> per-pod Python Serve proxy (proxy_location: EveryNode)
+#               -> Ray actor RPC -> replica
+# HAProxy is NOT enabled in this manifest; port 8000 is the Python proxy.
 apiVersion: ray.io/v1
 kind: RayService
 metadata:

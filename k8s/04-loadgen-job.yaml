@@ -33,7 +33,7 @@ spec:
             # Change TARGET_HOST to test the desired architecture:
             # Architecture A: http://direct-serving-svc:8000
             # Architecture B: http://ray-serve-python-proxy-serve-svc:8000
-            # Architecture C: http://ray-serve-worker-haproxy-svc:8000
+            # Architecture C: http://ray-serve-worker-haproxy-svc:8000 (direct ingress, targetPort 30000)
             - name: TARGET_HOST
               value: "http://ray-serve-worker-haproxy-svc:8000"
             - name: INFER_PATH

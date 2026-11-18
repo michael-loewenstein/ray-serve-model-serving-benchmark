@@ -4,9 +4,10 @@
 
 > **TL;DR Executive Summary:**
 > - **Workloads Evaluated:** CPU Tabular Inference (`xgboost`) and Lightweight GPU Embeddings (`all-MiniLM-L6-v2` FP16 on NVIDIA L4).
-> - **CPU Routing Overhead:** Ray Serve with Worker HAProxy direct routing adds +0.301 ms median latency (+30.9% relative, Bootstrap 95% CI: [+0.154 ms, +0.445 ms]) over native FastAPI/Uvicorn, passing the absolute <= 3.0 ms platform gate.
+> - **CPU Routing Overhead:** Ray Serve with direct-ingress routing (`:30000`) adds +0.301 ms median latency (+30.9% relative, Bootstrap 95% CI: [+0.154 ms, +0.445 ms]) over native FastAPI/Uvicorn, passing the absolute <= 3.0 ms platform gate.
+> - **Architecture Label Correction:** In Ray 2.55.1, port 8000 is Ray's HTTP ingress (HAProxy when enabled); port 30000 is the replica's direct-ingress HTTP server. Architecture C therefore measures **direct ingress, not HAProxy**. See [Cluster Topology & Request Path](docs/topology-and-request-path.md).
 > - **GPU Dynamic Micro-Batching:** Dynamic batching on NVIDIA L4 scales throughput 19.5x to 24.2x over single-request execution.
-> - **Baseline Hardening:** Direct Serving event loop decoupled via `asyncio.to_thread`; manifests strictly pinned to `torch==2.2.0` on dedicated `g6.xlarge` instances.
+> - **Baseline Hardening:** Direct Serving event loop decoupled via `asyncio.to_thread`; manifests strictly pinned to `torch==2.2.0` on `g6.xlarge` instances (instance type and zone pinned, but not node-isolated).
 > - **Phase 3 Baseline Status (In Progress):** Preliminary exploratory single-run snapshot reported; multi-trial matrix re-measurement pending with warmups and bootstrap CIs.
 > - **Key Reports:** [Phase 2 CPU XGBoost Report](docs/report.md) | [Phase 3 GPU Embeddings Report](results/phase3-gpu-embeddings-report.md) | [Statistical Summary](results/summary_report.md).
 [![Ray](https://img.shields.io/badge/Ray-2.55.1-blue.svg)](https://docs.ray.io/)
@@ -23,6 +24,7 @@ A rigorous, open-source performance benchmark evaluating the proxy, queueing, an
 ## Table of Contents
 
 - [Benchmark Goal & Scope](#benchmark-goal--scope)
+- [Cluster Topology & Request Path](#cluster-topology--request-path)
 - [Phase 1: Initial Exploratory Discovery (CPU XGBoost)](#phase-1-initial-exploratory-discovery-cpu-xgboost)
 - [Phase 2: CPU Tabular Benchmark (XGBoost on c6i.2xlarge)](#phase-2-cpu-tabular-benchmark-xgboost-on-c6i2xlarge)
   - [1. Latency Percentiles (Absolute & Relative)](#1-latency-percentiles-absolute--relative)
@@ -57,6 +59,29 @@ We evaluate two distinct operational regimes:
 
 ---
 
+## Cluster Topology & Request Path
+
+Full provenance, port citations, and capture commands: [docs/topology-and-request-path.md](docs/topology-and-request-path.md).
+
+| Phase | Pods applied | Nodes |
+|---|---|---|
+| **Phase 2 (CPU)** | 2 Direct + (1 head + 2 workers) × 2 RayServices + 1 k6 = **9 pods**, all `c6i.2xlarge` in `us-east-1d` | Minimum 2 nodes by packing; **actual count was not recorded**. No anti-affinity, so pods from different architectures could share a node. |
+| **Phase 3 (GPU)** | 1 Direct GPU + 1 Ray head (`c6i`) + 1 Ray GPU worker + 1 k6 driver | Minimum 2 × `g6.xlarge` + 1 × `c6i`; the historical driver node was not recorded and is now pinned to `c6i.2xlarge` for future runs. |
+
+**Port roles (Ray 2.55.1):** `:8000` is the Ray Serve HTTP ingress — HAProxy when `RAY_SERVE_ENABLE_HA_PROXY=1`, otherwise the Python proxy. `:30000–31000` is the direct-ingress HTTP server inside each ingress-deployment replica. The benchmark's `port 8000 → targetPort 30000` Service therefore **bypasses HAProxy** and connects straight to the replica.
+
+**Request paths:**
+
+- **Direct:** k6 pod → ClusterIP `:8000` → Uvicorn pod → FastAPI → model → response.
+- **Ray B (default proxy):** k6 pod → KubeRay `serve-svc :8000` → Python Serve proxy → Ray actor RPC → replica.
+- **Ray C (direct ingress):** k6 pod → Service `:8000` → **targetPort 30000** → replica's direct-ingress HTTP server → replica. HAProxy and the head are skipped.
+
+ClusterIP balances per TCP connection, and k6 uses keep-alive, so each VU stays pinned to one backend for the life of its connection.
+
+The KubeRay-generated `serve-svc` is **not head-only**: worker pods always carry `ray.io/serve=true`, and the head joins the endpoint list once its proxy health check passes. If a run shows head-only endpoints, inspect `kubectl get endpoints` and the pod labels rather than assuming the design.
+
+---
+
 ---
 
 ## Phase 1: Initial Exploratory Discovery (CPU XGBoost)
@@ -64,13 +89,15 @@ We evaluate two distinct operational regimes:
 Phase 1 was an initial exploratory benchmark (4,624 requests at 50 req/s) designed to measure baseline reverse-proxy routing overhead between Direct Serving and Ray Serve.
 
 ### The Routing Architecture Discovery
-KubeRay default architecture routes ingress through a head node **Python Proxy actor** (`serve-svc`), introducing serialization and async event-loop queueing under load. Bypassing the head node via **Worker HAProxy** (`haproxy-svc` on port 30000) dropped median latency from 2.47 ms to 1.60 ms and cut p99 tail latency by over 5 ms:
+KubeRay's generated Serve Service (`serve-svc`) fans out to the per-pod ingress on port 8000; with HAProxy disabled this is the Python Serve proxy, which forwards to replicas over Ray actor RPC. In Phase 1 the default path introduced serialization and async event-loop queueing under load. Connecting directly to the replica's direct-ingress HTTP server on port 30000 — which bypasses both the proxy and HAProxy — dropped median latency from 2.47 ms to 1.60 ms and cut p99 tail latency by over 5 ms:
 
 | Routing Architecture | Path | p50 Latency | p90 Latency | p95 Latency | p99 Latency | Failure Rate |
 |---|---|---|---|---|---|---|
 | **Direct Serving (K8s)** | ClusterIP to Uvicorn Pod | **1.81 ms** | **2.19 ms** | **2.33 ms** | **2.76 ms** | 0.02% |
-| **Ray Serve (Python Head Proxy)** | `serve-svc` to Head Proxy to Worker Actor | 2.47 ms | 3.59 ms | 5.96 ms | 15.27 ms | 1.01% |
-| **Ray Serve (Worker HAProxy :30000)** | `haproxy-svc` to Worker HAProxy to Worker Actor | **1.60 ms** | **2.31 ms** | **3.41 ms** | **10.03 ms** | **0.00%** |
+| **Ray Serve (Default Python Proxy :8000)** | `serve-svc` to per-pod Python proxy (`:8000`) to replica actor | 2.47 ms | 3.59 ms | 5.96 ms | 15.27 ms | 1.01% |
+| **Ray Serve (Direct Ingress :30000)** | Service `:8000` to replica direct-ingress server (`:30000`) | **1.60 ms** | **2.31 ms** | **3.41 ms** | **10.03 ms** | **0.00%** |
+
+*Phase 1 was originally reported as "Worker HAProxy :30000." Port-role verification against Ray 2.55.1 shows that `:30000` is the replica's direct-ingress HTTP server, not HAProxy; see the [topology doc](docs/topology-and-request-path.md).*
 
 *Why Phase 1 Was Superseded:* In Phase 1, pods were scheduled across multiple AWS Availability Zones and mixed CPU architectures (ARM head, Intel workers). To eliminate cross-AZ latency noise and obtain rigorous publication-grade statistics, Phase 1 was formally superseded by the **Phase 2 matched 15-trial matrix** below. Detailed findings: [Phase 1 Report](results/phase1-cpu-xgboost-report.md).
 
@@ -82,22 +109,22 @@ Evaluates an open-source **XGBoost Binary Classifier** (50 float features, 100 t
 
 ### 1. Latency Percentiles (Absolute & Relative)
 
-#### Absolute Latency First (Worker HAProxy vs. Direct Baseline)
+#### Absolute Latency First (Direct Ingress vs. Direct Baseline)
 
-When utilizing Ray Serve's worker-colocated HAProxy routing (`:30000`), absolute latency overhead is negligible:
+When connecting to Ray Serve's direct-ingress replica server (`:30000`), absolute latency overhead is negligible:
 
-| Metric | Direct Serving Baseline | Ray Serve (Worker HAProxy :30000) | Absolute Overhead | Absolute Gate ($\\le 3.0\\text{ ms}$) |
+| Metric | Direct Serving Baseline | Ray Serve (Direct Ingress :30000) | Absolute Overhead | Absolute Gate ($\\le 3.0\\text{ ms}$) |
 |---|---|---|---|---|
 | **p50 (Median)** | **0.973 ms** (Mean: 1.001 ± 0.083) | **1.274 ms** (Mean: 1.315 ± 0.097) | **+0.301 ms** (~300 µs) | **PASS** |
 | **p90** | **1.151 ms** (Mean: 1.183 ± 0.110) | **1.768 ms** (Mean: 1.761 ± 0.087) | **+0.617 ms** | **PASS** |
 | **p95** | **1.246 ms** (Mean: 1.302 ± 0.170) | **1.856 ms** (Mean: 1.835 ± 0.087) | **+0.610 ms** | **PASS** |
 | **p99** | **1.444 ms** (Mean: 1.533 ± 0.242) | **2.595 ms** (Mean: 2.527 ± 0.702) | **+1.151 ms** (~1.15 ms) | **PASS** |
 
-*By comparison, Ray Serve's default Python Proxy (head node) exhibited **+0.505 ms** at p50 (Median: 1.478 ms) and **+3.421 ms** at p99 (Median: 4.865 ms).*
+*By comparison, Ray Serve's default Python proxy (`:8000`, `proxy_location: EveryNode`) exhibited **+0.505 ms** at p50 (Median: 1.478 ms) and **+3.421 ms** at p99 (Median: 4.865 ms).*
 
 #### Relative Overhead Second
 
-| Metric | Direct Serving Baseline | Ray Serve (Worker HAProxy :30000) | Relative Overhead | Relative Gate ($\\le 10\\%$) |
+| Metric | Direct Serving Baseline | Ray Serve (Direct Ingress :30000) | Relative Overhead | Relative Gate ($\\le 10\\%$) |
 |---|---|---|---|---|
 | **p50** | 0.973 ms | 1.274 ms | **+30.9%** | **FAIL** |
 | **p90** | 1.151 ms | 1.768 ms | **+53.6%** | **FAIL** |
@@ -107,6 +134,8 @@ When utilizing Ray Serve's worker-colocated HAProxy routing (`:30000`), absolute
 <p align="center">
   <img src="docs/images/phase2_cpu_latency_comparison.svg" alt="Phase 2: CPU Latency Comparison by Percentile" width="850">
 </p>
+
+*Chart legend retains the original "Worker HAProxy" label; read it as "Ray Serve Direct Ingress (`:30000`)". Charts will be regenerated with corrected labels during the Phase 2 report refresh.*
 
 ### 2. Scoped Workload Analysis & Takeaways
 
@@ -122,7 +151,7 @@ This benchmark intentionally minimizes model compute (~0.5–0.8 ms inference) t
 ### 3. Serving Architecture Comparison
 
 ```
-                         [ External Client: k6 Load Generator ]
+                      [ In-Cluster Client: k6 Load Generator Pod ]
                                             │
                    ┌────────────────────────┴────────────────────────┐
                    │           Kubernetes Service (ClusterIP)        │
@@ -132,27 +161,29 @@ This benchmark intentionally minimizes model compute (~0.5–0.8 ms inference) t
        ▼                                    ▼                                    ▼
 ┌─────────────────────────┐    ┌─────────────────────────┐    ┌─────────────────────────┐
 │     ARCHITECTURE A      │    │     ARCHITECTURE B      │    │     ARCHITECTURE C      │
-│     DIRECT SERVING      │    │ RAY SERVE PYTHON PROXY  │    │ RAY SERVE WORKER HAPROXY│
+│     DIRECT SERVING      │    │ RAY SERVE DEFAULT PROXY │    │ RAY SERVE DIRECT INGRESS│
 ├─────────────────────────┤    ├─────────────────────────┤    ├─────────────────────────┤
-│ • Ingress/ClusterIP     │    │ • Ingress/ClusterIP     │    │ • Ingress/ClusterIP     │
-│       │                 │    │       │                 │    │       │                 │
-│       ▼                 │    │       ▼                 │    │       ▼ (Port 30000)    │
-│  [ Uvicorn Pod ]        │    │  [ Ray Head Node ]      │    │  [ Ray Worker Pod ]     │
-│   FastAPI + orjson      │    │   SERVE_PROXY_ACTOR     │    │   HAProxy (C process)   │
-│   XGBoost (1 vCPU)      │    │   (Python/asyncio)      │    │       │                 │
-│                         │    │       │ (gRPC RPC mesh) │    │       ▼ (Local socket)  │
-│                         │    │       ▼                 │    │   Worker Actor          │
-│                         │    │  [ Ray Worker Pod ]     │    │   (Python Starlette)    │
-│                         │    │   Worker Actor (Python) │    │   XGBoost (1 vCPU)      │
+│ • ClusterIP → Pod IP    │    │ • KubeRay serve-svc     │    │ • Custom ClusterIP      │
+│       │                 │    │       │ (:8000)         │    │       │ (:30000)        │
+│       ▼                 │    │       ▼                 │    │       ▼                 │
+│  [ Uvicorn Pod ]        │    │  [ Serve Python proxy ] │    │  [ Replica HTTP server ]│
+│   FastAPI + orjson      │    │   (per pod, EveryNode)  │    │   (direct ingress)      │
+│   XGBoost (1 vCPU)      │    │       │ Ray actor RPC   │    │       │                 │
+│                         │    │       ▼                 │    │       ▼                 │
+│                         │    │  [ XGBoost replica ]    │    │  [ XGBoost replica ]    │
+│                         │    │   (worker pod)          │    │   (same pod)            │
 └─────────────────────────┘    └─────────────────────────┘    └─────────────────────────┘
 ```
 
-#### What Worker HAProxy Bypasses vs. Retains
+*In Architecture C the HAProxy process does exist on each worker's `:8000`, but the Service targets `:30000`, so HAProxy is not traversed.*
 
-| Component | Default Python Proxy | Worker HAProxy (`:30000`) | Impact |
+#### What Direct Ingress Bypasses vs. Retains
+
+| Component | Default Proxy (`:8000`) | Direct Ingress (`:30000`) | Impact |
 |---|---|---|---|
-| **Head Proxy Actor** | Traversed | **Bypassed** | Eliminates Python asyncio event-loop queueing |
-| **Inter-Node RPC Mesh** | Traversed | **Bypassed** | Eliminates cross-pod gRPC forwarding hops |
+| **Serve ingress proxy** | Traversed (Python proxy; HAProxy if enabled) | **Bypassed** | No proxy process or HAProxy in the request path |
+| **Inter-Node RPC Mesh** | Traversed | **Bypassed** for this single-deployment app | Request terminates in the replica's own HTTP server |
+| **Head node** | One of several proxy endpoints | **Not an endpoint** | Custom Service selects worker pods only |
 | **Actor Lifecycle Management** | Active | **Active** | Managed by KubeRay and Ray GCS controller |
 | **Dynamic Batching (`@serve.batch`)**| Supported | **Supported** | Active in framework (evaluated in Phase 3) |
 | **Concurrency Ceiling** | `max_ongoing_requests: 50` | `max_ongoing_requests: 50` | Application backpressure enforced locally |
@@ -165,9 +196,9 @@ This benchmark intentionally minimizes model compute (~0.5–0.8 ms inference) t
 </p>
 
 1. **Pure Model Latency (`server_model_latency_ms`):** Timed immediately before `xgb.DMatrix([features])` construction and stopped immediately after `booster.predict(dmat)`. Captures CPU memory buffer construction from 50 floats plus XGBoost C++ histogram booster inference (~0.50–0.61 ms).
-2. **Server Total Latency (`server_total_latency_ms`):** Starts upon receiving the HTTP request body (`await request.body()`), parses JSON with `orjson.loads()`, executes prediction, and serializes response with `orjson.dumps()`.
+2. **Server Total Latency (`server_total_latency_ms`):** Application timer around JSON parsing and model execution. The Direct timer starts before `await request.body()` and stops after `booster.predict`, before serialization; the Ray timer starts after the body is read and also stops before serialization. The two boundaries are close but not identical; see the [measurement-boundary note](docs/topology-and-request-path.md#measurement-boundary-note).
 3. **Client HTTP Duration (`http_req_duration`):** Full open-loop round-trip duration measured by `k6` from TCP transmission to receipt of the final response byte.
-4. **Estimated Network & Proxy Transit Overhead:** Per-request difference $\\Delta_{\\text{transit}} = T_{\\text{client}} - T_{\\text{server}}$, reflecting network interface transit, Kubernetes ClusterIP routing, reverse-proxy queuing (HAProxy / Python proxy actor), and inter-process socket communication.
+4. **Estimated Network & Proxy Transit Overhead:** Per-request difference $\\Delta_{\\text{transit}} = T_{\\text{client}} - T_{\\text{server}}$, reflecting network interface transit, Kubernetes ClusterIP routing, proxy or direct-ingress queuing (Python proxy, HAProxy, or the replica ASGI server), and inter-process socket communication.
 
 ### 5. Raw Data Limits & Statistical Rigor
 
@@ -180,9 +211,9 @@ This benchmark intentionally minimizes model compute (~0.5–0.8 ms inference) t
 ## Phase 3: GPU Embeddings Benchmark (Sentence-Transformers on NVIDIA L4) (In Progress)
 
 > **Status: In Progress**  
-> All architectural unblocking fixes (offloading model encoding to worker threads via `asyncio.to_thread`), manifest parity (`torch==2.2.0`, dedicated `g6.xlarge` instances), and hardened 5-trial loadgen runners are completed in the codebase. The metrics below reflect the exploratory preliminary single-run snapshot; final verification and official gate sign-off are pending the multi-trial re-measurement detailed in [Section 6: Pending Actions & TODOs](#6-pending-actions--todos).
+> All architectural unblocking fixes (offloading model encoding to worker threads via `asyncio.to_thread`), manifest parity (`torch==2.2.0`, pinned `g6.xlarge` instances), and hardened 5-trial loadgen runners are completed in the codebase. The metrics below reflect the exploratory preliminary single-run snapshot; final verification and official gate sign-off are pending the multi-trial re-measurement detailed in [Section 6: Pending Actions & TODOs](#6-pending-actions--todos).
 
-Evaluates GPU dynamic request micro-batching on modern NVIDIA Tensor Cores by comparing **Direct Serving (FastAPI + PyTorch + Async Queue Batching)** against **Ray Serve (`@serve.batch` + Worker HAProxy :30000)** under client concurrencies from $C=1$ to $C=64$.
+Evaluates GPU dynamic request micro-batching on modern NVIDIA Tensor Cores by comparing **Direct Serving (FastAPI + PyTorch + Async Queue Batching)** against **Ray Serve (`@serve.batch` + Direct Ingress :30000)** under client concurrencies from $C=1$ to $C=64$.
 
 ### 1. Setup & Hardware Parity
 - **Model:** Hugging Face `sentence-transformers/all-MiniLM-L6-v2` in FP16 (`torch.float16`, 384-dimensional dense vectors, 22M parameters).
@@ -198,17 +229,17 @@ Evaluates GPU dynamic request micro-batching on modern NVIDIA Tensor Cores by co
 | Architecture | Concurrency ($C$) | Throughput (embeddings/s) | p50 (ms) | p90 (ms) | p95 (ms) | p99 (ms) | Failure Rate |
 |---|---|---|---|---|---|---|---|
 | **Direct Serving (Async Queue)** | 1 | **93.60** | **10.41** | 10.79 | **10.87** | 11.25 | 0.00% |
-| **Ray Serve (@serve.batch + HAProxy :30000)** | 1 | **85.62** | **10.93** | 13.23 | **13.57** | 15.75 | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 1 | **85.62** | **10.93** | 13.23 | **13.57** | 15.75 | 0.00% |
 | **Direct Serving (Async Queue)** | 4 | **350.18** | **11.09** | 11.73 | **11.96** | 12.68 | 0.00% |
-| **Ray Serve (@serve.batch + HAProxy :30000)** | 4 | **309.59** | **12.17** | 14.57 | **15.34** | 17.70 | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 4 | **309.59** | **12.17** | 14.57 | **15.34** | 17.70 | 0.00% |
 | **Direct Serving (Async Queue)** | 8 | **715.72** | **10.70** | 11.46 | **11.80** | 13.40 | 0.00% |
-| **Ray Serve (@serve.batch + HAProxy :30000)** | 8 | **563.44** | **13.40** | 16.41 | **17.54** | 21.22 | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 8 | **563.44** | **13.40** | 16.41 | **17.54** | 21.22 | 0.00% |
 | **Direct Serving (Async Queue)** | 16 | **1,266.70** | **12.06** | 13.27 | **14.04** | 17.31 | 0.00% |
-| **Ray Serve (@serve.batch + HAProxy :30000)** | 16 | **951.83** | **15.89** | 20.08 | **21.75** | 26.18 | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 16 | **951.83** | **15.89** | 20.08 | **21.75** | 26.18 | 0.00% |
 | **Direct Serving (Async Queue)** | 32 | **2,271.48** | **11.75** | 16.13 | **17.76** | **111.65** | 0.00% |
-| **Ray Serve (@serve.batch + HAProxy :30000)** | 32 | **1,671.63** | **16.92** | 25.58 | **28.41** | **37.50** | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 32 | **1,671.63** | **16.92** | 25.58 | **28.41** | **37.50** | 0.00% |
 | **Direct Serving (Async Queue)** | 64 (Saturated) | **1,826.88** | **32.15** | 35.86 | **46.57** | **138.18** | 0.00% |
-| **Ray Serve (@serve.batch + HAProxy :30000)** | 64 (Saturated) | **1,664.16** | **34.63** | 52.17 | **58.38** | **69.04** | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 64 (Saturated) | **1,664.16** | **34.63** | 52.17 | **58.38** | **69.04** | 0.00% |
 
 ### 3. Visual Performance Curves
 
@@ -219,6 +250,8 @@ Evaluates GPU dynamic request micro-batching on modern NVIDIA Tensor Cores by co
 <p align="center">
   <img src="docs/images/phase3_gpu_latency_tail_overload.svg" alt="Phase 3: GPU Latency and Overload Tail" width="950">
 </p>
+
+*Phase 3 chart legends retain the original "HAProxy :30000" label; read it as "Direct Ingress (`:30000`)". Chart regeneration with corrected labels and error bars is tracked in Section 6.*
 
 ### 4. Plain Headline Findings (Stated Plainly, No Spin)
 
@@ -241,7 +274,7 @@ Evaluates GPU dynamic request micro-batching on modern NVIDIA Tensor Cores by co
 The following actionable tasks remain to bring Phase 3 to completion:
 
 1. **[High Priority] Re-Run Concurrency Load Matrix (GPU Re-Measurement):**
-   - **Context:** The initial baseline ran PyTorch `model.encode()` synchronously on the FastAPI event loop, causing event-loop starvation and artificial tail latency at higher concurrencies ($p99 = 111.65\text{ ms}$ at $C=32$, $138.18\text{ ms}$ at $C=64$). Both Direct Serving and Ray Serve have now been decoupled via `asyncio.to_thread` and pinned to `torch==2.2.0` on dedicated `g6.xlarge` instances.
+   - **Context:** The initial baseline ran PyTorch `model.encode()` synchronously on the FastAPI event loop, causing event-loop starvation and artificial tail latency at higher concurrencies ($p99 = 111.65\text{ ms}$ at $C=32$, $138.18\text{ ms}$ at $C=64$). Both Direct Serving and Ray Serve have now been decoupled via `asyncio.to_thread` and pinned to `torch==2.2.0` on `g6.xlarge` instances (instance type and zone pinned; nodes not isolated).
    - **Action:** Spin up a temporary `g6.xlarge` instance in `us-east-1d` and execute `benchmarks/gpu-embed/loadgen/run_embed_matrix.py` across 5 randomized trials $\times$ 6 concurrency levels ($C \in \{1, 4, 8, 16, 32, 64\}$) with a 15-second warmup stage.
    - **Deliverable:** Publish updated goodput and latency percentiles with 95% Bootstrap Confidence Intervals; definitively sign off on the $C=64$ closed-loop saturation decision gate (currently labeled `INCONCLUSIVE / PENDING RE-RUN`).
 
@@ -341,8 +374,8 @@ python3 loadgen/run_embed_matrix.py \
 
 | Component | Pinned Version | Role / Description |
 |---|---|---|
-| **Ray / Ray Serve** | `2.55.1` | Distributed serving runtime (`RAY_SERVE_ENABLE_HA_PROXY=1`) |
-| **ray-haproxy** | `2.8.25` | Worker-colocated HAProxy reverse proxy wheel |
+| **Ray / Ray Serve** | `2.55.1` | Distributed serving runtime (HAProxy ingress enabled; Architecture C tests direct ingress instead) |
+| **ray-haproxy** | `2.8.25` | HAProxy binary bundled for Ray Serve's HAProxy ingress. Installed in the Ray image; the benchmark's direct-ingress Service does not traverse it. |
 | **KubeRay Operator** | `v1.4.2` | Kubernetes operator managing `RayService` CRDs |
 | **k6** | `v0.54.0` | Open-loop load generator (`constant-arrival-rate` & VU stages) |
 | **XGBoost** | `2.1.1` | CPU tabular runtime (`tree_method: hist`) |
@@ -360,7 +393,7 @@ python3 loadgen/run_embed_matrix.py \
 ## Future Roadmap (Phases 4+)
 
 - [x] **Phase 1: Open-Source CPU XGBoost Tabular Baseline**
-- [x] **Phase 2: CPU Saturation & 3-Way Routing Comparison** (Direct vs. Ray Head Proxy vs. Ray Worker HAProxy)
+- [x] **Phase 2: CPU Saturation & 3-Way Routing Comparison** (Direct vs. Ray Default Proxy vs. Ray Direct Ingress)
 - [ ] **Phase 3: GPU Dynamic Micro-Batching (In Progress)** (`sentence-transformers/all-MiniLM-L6-v2` on NVIDIA L4) — Code, manifests, and loadgen hardened; multi-trial matrix re-measurement pending.
 - [ ] **Phase 4: Large Language Model Serving (vLLM + Llama 3.1 8B)** — TTFT, TPOT, and official Ray LLM Perf benchmark methodology.
 - [ ] **Phase 5: Multi-Model Orchestration & Resource Contention** — Composite DAG pipelines combining CPU tabular preprocessing, GPU vector embeddings, and LLM generative reranking under shared cluster contention.
@@ -378,6 +411,7 @@ ray-serve-model-serving-benchmark/
 ├── docs/
 │   ├── plan.md                  # Comprehensive benchmark plan & methodology
 │   ├── report.md                # Phase 2 15-trial statistical benchmark report
+│   ├── topology-and-request-path.md # Cluster topology, port roles, and request paths
 │   ├── phase3-gpu-embeddings-plan.md # Phase 3 GPU embeddings plan
 │   └── images/                  # High-resolution benchmark vector charts
 │       ├── phase2_cpu_latency_comparison.svg
@@ -389,7 +423,7 @@ ray-serve-model-serving-benchmark/
 │       ├── README.md            # Exact reproduction steps for GPU embeddings
 │       ├── fixtures/            # 2,000 synthetic catalog queries
 │       ├── direct/              # Direct Serving (PyTorch + asyncio.Queue)
-│       ├── ray/                 # Ray Serve (@serve.batch + HAProxy)
+│       ├── ray/                 # Ray Serve (@serve.batch + direct ingress)
 │       └── loadgen/             # k6 concurrency sweep harness
 ├── model/
 │   ├── README.md                # Model training details
@@ -401,8 +435,8 @@ ray-serve-model-serving-benchmark/
 │   ├── README.md                # Manifest documentation
 │   ├── 00-namespace.yaml        # Benchmark namespace
 │   ├── 01-direct-serving.yaml   # Architecture A: FastAPI + Uvicorn
-│   ├── 02-ray-serve-python-proxy.yaml   # Architecture B: Ray Serve Head Proxy
-│   ├── 03-ray-serve-worker-haproxy.yaml # Architecture C: Ray Serve Worker HAProxy
+│   ├── 02-ray-serve-python-proxy.yaml   # Architecture B: Ray Serve Default Proxy
+│   ├── 03-ray-serve-worker-haproxy.yaml # Architecture C: Ray Serve Direct Ingress
 │   ├── 04-loadgen-job.yaml      # In-cluster k6 load generator Job
 │   └── app/
 │       ├── direct_app.py        # Direct serving FastAPI application

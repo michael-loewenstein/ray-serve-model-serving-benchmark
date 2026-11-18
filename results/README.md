@@ -19,6 +19,12 @@ python results/analyze.py
 cd results && python analyze.py
 ```
 
+## Label Correction (2026-11-18)
+
+The arm previously called **"Worker HAProxy :30000"** is **Ray Serve direct ingress**. In Ray 2.55.1, `:8000` is the HAProxy/Python ingress and `:30000–31000` are the direct-ingress HTTP servers inside Serve replicas. The benchmark Service maps `8000 → targetPort 30000`, so it bypasses HAProxy.
+
+Only the `architecture` label and explanatory strings in `raw_trials.json` / `raw_trials.csv` were updated; **no measurement values changed**. The internal `target_key` remains `ray_haproxy` for schema compatibility. See [docs/topology-and-request-path.md](../docs/topology-and-request-path.md).
+
 ## Statistical Methodology
 
 1. **Trial-Level Independence:**
@@ -34,8 +40,8 @@ cd results && python analyze.py
    Nominal matrix total: $15 \times 1,500 = 22,500$ requests.
    Due to k6 `constant-arrival-rate` microsecond boundary ticks during the final millisecond before stage exit, 8 trials emitted 1,501 requests:
    - Direct Serving: 4 trials @ 1,500 + 1 trial @ 1,501 = **7,501 requests**
-   - Ray Python Proxy: 2 trials @ 1,500 + 3 trials @ 1,501 = **7,503 requests**
-   - Ray Worker HAProxy: 1 trial @ 1,500 + 4 trials @ 1,501 = **7,504 requests**
+   - Ray Default Python Proxy: 2 trials @ 1,500 + 3 trials @ 1,501 = **7,503 requests**
+   - Ray Direct Ingress: 1 trial @ 1,500 + 4 trials @ 1,501 = **7,504 requests**
    - **Total:** $7,501 + 7,503 + 7,504 = \mathbf{22,508\text{ requests}}$
 
 4. **Raw Data Limits & p99 Interpretation:**
