@@ -1,0 +1,169 @@
+2026-11-18 21:38:00 [ℹ]  eksctl version 0.230.0
+2026-11-18 21:38:00 [ℹ]  using region us-east-1
+2026-11-18 21:38:01 [ℹ]  subnets for us-east-1a - public:10.42.0.0/19 private:10.42.64.0/19
+2026-11-18 21:38:01 [ℹ]  subnets for us-east-1d - public:10.42.32.0/19 private:10.42.96.0/19
+2026-11-18 21:38:01 [ℹ]  nodegroup "head" will use "" [AmazonLinux2023/1.34]
+2026-11-18 21:38:01 [ℹ]  nodegroup "worker-w1" will use "" [AmazonLinux2023/1.34]
+2026-11-18 21:38:01 [ℹ]  nodegroup "worker-w2" will use "" [AmazonLinux2023/1.34]
+2026-11-18 21:38:01 [ℹ]  nodegroup "loadgen" will use "" [AmazonLinux2023/1.34]
+2026-11-18 21:38:01 [!]  Auto Mode will be enabled by default in an upcoming release of eksctl. This means managed node groups and managed networking add-ons will no longer be created by default. To maintain current behavior, explicitly set 'autoModeConfig.enabled: false' in your cluster configuration. Learn more: https://eksctl.io/usage/auto-mode/
+2026-11-18 21:38:01 [ℹ]  using Kubernetes version 1.34
+2026-11-18 21:38:01 [ℹ]  creating EKS cluster "ray-serve-phase2-rerun" in "us-east-1" region with managed nodes
+2026-11-18 21:38:01 [ℹ]  4 nodegroups (head, loadgen, worker-w1, worker-w2) were included (based on the include/exclude rules)
+2026-11-18 21:38:01 [ℹ]  will create a CloudFormation stack for cluster itself and 4 managed nodegroup stack(s)
+2026-11-18 21:38:01 [ℹ]  if you encounter any issues, check CloudFormation console or try 'eksctl utils describe-stacks --region=us-east-1 --cluster=ray-serve-phase2-rerun'
+2026-11-18 21:38:01 [ℹ]  Kubernetes API endpoint access will use default of {publicAccess=true, privateAccess=false} for cluster "ray-serve-phase2-rerun" in "us-east-1"
+2026-11-18 21:38:01 [ℹ]  CloudWatch logging will not be enabled for cluster "ray-serve-phase2-rerun" in "us-east-1"
+2026-11-18 21:38:01 [ℹ]  you can enable it with 'eksctl utils update-cluster-logging --enable-types={SPECIFY-YOUR-LOG-TYPES-HERE (e.g. all)} --region=us-east-1 --cluster=ray-serve-phase2-rerun'
+2026-11-18 21:38:01 [ℹ]  default addons metrics-server, vpc-cni, kube-proxy, coredns were not specified, will install them as EKS addons
+2026-11-18 21:38:01 [ℹ]  
+2 sequential tasks: { create cluster control plane "ray-serve-phase2-rerun", 
+    2 sequential sub-tasks: { 
+        5 sequential sub-tasks: { 
+            1 task: { create addons },
+            wait for control plane to become ready,
+            associate IAM OIDC provider,
+            no tasks,
+            update VPC CNI to use IRSA if required,
+        },
+        4 parallel sub-tasks: { 
+            create managed nodegroup "head",
+            create managed nodegroup "worker-w1",
+            create managed nodegroup "worker-w2",
+            create managed nodegroup "loadgen",
+        },
+    } 
+}
+2026-11-18 21:38:01 [ℹ]  building cluster stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:38:01 [ℹ]  deploying stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:38:31 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:38:31 [✖]  unexpected status "ROLLBACK_IN_PROGRESS" while waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:38:31 [✖]  unexpected status "ROLLBACK_IN_PROGRESS" while waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:38:31 [ℹ]  fetching stack events in attempt to troubleshoot the root cause of the failure
+2026-11-18 21:38:31 [!]  AWS::EC2::EIP/NATIP: DELETE_IN_PROGRESS
+2026-11-18 21:38:31 [!]  AWS::IAM::Role/ServiceRole: DELETE_IN_PROGRESS
+2026-11-18 21:38:31 [✖]  AWS::EC2::EIP/NATIP: CREATE_FAILED – "Resource creation cancelled"
+2026-11-18 21:38:31 [✖]  AWS::IAM::Role/ServiceRole: CREATE_FAILED – "Resource creation cancelled"
+2026-11-18 21:38:31 [✖]  AWS::EC2::VPC/VPC: CREATE_FAILED – "Resource handler returned message: \"The maximum number of VPCs has been reached. (Service: Ec2, Status Code: 400, Request ID: 9c23a93a-c304-406a-9b3a-c18bccc87c63) (SDK Attempt Count: 1)\" (RequestToken: 7e32c839-a087-594d-32d1-c06ca9dc7334, HandlerErrorCode: GeneralServiceException)"
+2026-11-18 21:38:31 [✖]  AWS::EC2::InternetGateway/InternetGateway: CREATE_FAILED – "Resource handler returned message: \"The maximum number of internet gateways has been reached. (Service: Ec2, Status Code: 400, Request ID: 90057ee8-0288-4e9f-8997-a7710f2fced4) (SDK Attempt Count: 1)\" (RequestToken: 4fc01907-2f90-7743-6390-d9f9c0a0b3e3, HandlerErrorCode: ServiceLimitExceeded)"
+2026-11-18 21:38:31 [!]  1 error(s) occurred and cluster hasn't been created properly, you may wish to check CloudFormation console
+2026-11-18 21:38:31 [ℹ]  to cleanup resources, run 'eksctl delete cluster --region=us-east-1 --name=ray-serve-phase2-rerun'
+2026-11-18 21:38:31 [✖]  ResourceNotReady: failed waiting for successful resource state
+Error: failed to create cluster "ray-serve-phase2-rerun"
+=== 2026-11-18 us-west-2 attempt (after coordinator moved rerun to us-west-2; us-east-1 failure preserved above) ===
+2026-11-18 21:52:50 [ℹ]  eksctl version 0.230.0
+2026-11-18 21:52:50 [ℹ]  using region us-west-2
+2026-11-18 21:52:50 [ℹ]  subnets for us-west-2a - public:10.42.0.0/19 private:10.42.64.0/19
+2026-11-18 21:52:50 [ℹ]  subnets for us-west-2b - public:10.42.32.0/19 private:10.42.96.0/19
+2026-11-18 21:52:50 [ℹ]  nodegroup "head" will use "" [AmazonLinux2023/1.34]
+2026-11-18 21:52:50 [ℹ]  nodegroup "worker-w1" will use "" [AmazonLinux2023/1.34]
+2026-11-18 21:52:50 [ℹ]  nodegroup "worker-w2" will use "" [AmazonLinux2023/1.34]
+2026-11-18 21:52:50 [ℹ]  nodegroup "loadgen" will use "" [AmazonLinux2023/1.34]
+2026-11-18 21:52:50 [!]  Auto Mode will be enabled by default in an upcoming release of eksctl. This means managed node groups and managed networking add-ons will no longer be created by default. To maintain current behavior, explicitly set 'autoModeConfig.enabled: false' in your cluster configuration. Learn more: https://eksctl.io/usage/auto-mode/
+2026-11-18 21:52:50 [ℹ]  using Kubernetes version 1.34
+2026-11-18 21:52:50 [ℹ]  creating EKS cluster "ray-serve-phase2-rerun" in "us-west-2" region with managed nodes
+2026-11-18 21:52:50 [ℹ]  4 nodegroups (head, loadgen, worker-w1, worker-w2) were included (based on the include/exclude rules)
+2026-11-18 21:52:50 [ℹ]  will create a CloudFormation stack for cluster itself and 4 managed nodegroup stack(s)
+2026-11-18 21:52:50 [ℹ]  if you encounter any issues, check CloudFormation console or try 'eksctl utils describe-stacks --region=us-west-2 --cluster=ray-serve-phase2-rerun'
+2026-11-18 21:52:50 [ℹ]  Kubernetes API endpoint access will use default of {publicAccess=true, privateAccess=false} for cluster "ray-serve-phase2-rerun" in "us-west-2"
+2026-11-18 21:52:50 [ℹ]  CloudWatch logging will not be enabled for cluster "ray-serve-phase2-rerun" in "us-west-2"
+2026-11-18 21:52:50 [ℹ]  you can enable it with 'eksctl utils update-cluster-logging --enable-types={SPECIFY-YOUR-LOG-TYPES-HERE (e.g. all)} --region=us-west-2 --cluster=ray-serve-phase2-rerun'
+2026-11-18 21:52:50 [ℹ]  default addons metrics-server, vpc-cni, kube-proxy, coredns were not specified, will install them as EKS addons
+2026-11-18 21:52:50 [ℹ]  
+2 sequential tasks: { create cluster control plane "ray-serve-phase2-rerun", 
+    2 sequential sub-tasks: { 
+        5 sequential sub-tasks: { 
+            1 task: { create addons },
+            wait for control plane to become ready,
+            associate IAM OIDC provider,
+            no tasks,
+            update VPC CNI to use IRSA if required,
+        },
+        4 parallel sub-tasks: { 
+            create managed nodegroup "head",
+            create managed nodegroup "worker-w1",
+            create managed nodegroup "worker-w2",
+            create managed nodegroup "loadgen",
+        },
+    } 
+}
+2026-11-18 21:52:50 [ℹ]  building cluster stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:52:50 [ℹ]  deploying stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:53:20 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:53:50 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:54:50 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:55:50 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:56:51 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:57:51 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:58:51 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 21:59:51 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 22:00:51 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 22:01:51 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 22:02:51 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 22:03:51 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-18 22:03:52 [!]  recommended policies were found for "vpc-cni" addon, but since OIDC is disabled on the cluster, eksctl cannot configure the requested permissions; the recommended way to provide IAM permissions for "vpc-cni" addon is via pod identity associations; after addon creation is completed, add all recommended policies to the config file, under `addon.PodIdentityAssociations`, and run `eksctl update addon`
+2026-11-18 22:03:52 [ℹ]  creating addon: vpc-cni
+2026-11-18 22:03:53 [ℹ]  successfully created addon: vpc-cni
+2026-11-18 22:03:53 [ℹ]  creating addon: kube-proxy
+2026-11-18 22:03:53 [ℹ]  successfully created addon: kube-proxy
+2026-11-18 22:03:53 [ℹ]  creating addon: coredns
+2026-11-18 22:03:54 [ℹ]  successfully created addon: coredns
+2026-11-18 22:05:55 [ℹ]  addon "vpc-cni" active
+2026-11-18 22:05:56 [ℹ]  deploying stack "eksctl-ray-serve-phase2-rerun-addon-vpc-cni"
+2026-11-18 22:05:56 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-addon-vpc-cni"
+2026-11-18 22:06:26 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-addon-vpc-cni"
+2026-11-18 22:06:26 [ℹ]  updating addon
+2026-11-18 22:06:37 [ℹ]  addon "vpc-cni" active
+2026-11-18 22:06:37 [ℹ]  building managed nodegroup stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen"
+2026-11-18 22:06:37 [ℹ]  building managed nodegroup stack "eksctl-ray-serve-phase2-rerun-nodegroup-head"
+2026-11-18 22:06:37 [ℹ]  building managed nodegroup stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 22:06:37 [ℹ]  building managed nodegroup stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 22:06:37 [ℹ]  deploying stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen"
+2026-11-18 22:06:37 [ℹ]  deploying stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 22:06:37 [ℹ]  deploying stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 22:06:38 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen"
+2026-11-18 22:06:38 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 22:06:38 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 22:06:38 [ℹ]  deploying stack "eksctl-ray-serve-phase2-rerun-nodegroup-head"
+2026-11-18 22:06:38 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-head"
+2026-11-18 22:07:08 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 22:07:08 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen"
+2026-11-18 22:07:08 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 22:07:08 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-head"
+2026-11-18 22:07:42 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 22:07:48 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen"
+2026-11-18 22:07:54 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-head"
+2026-11-18 22:08:04 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 22:08:27 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-head"
+2026-11-18 22:08:51 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 22:09:12 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 22:09:31 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen"
+2026-11-18 22:09:31 [ℹ]  waiting for the control plane to become ready
+2026-11-18 22:09:32 [✔]  saved kubeconfig as "/home/ubuntu/.kube/ray-serve-phase2-rerun"
+2026-11-18 22:09:32 [ℹ]  no tasks
+2026-11-18 22:09:32 [✔]  all EKS cluster resources for "ray-serve-phase2-rerun" have been created
+2026-11-18 22:09:32 [ℹ]  nodegroup "head" has 1 node(s)
+2026-11-18 22:09:32 [ℹ]  node "ip-10-42-15-175.us-west-2.compute.internal" is ready
+2026-11-18 22:09:32 [ℹ]  waiting for at least 1 node(s) to become ready in "head"
+2026-11-18 22:09:32 [ℹ]  nodegroup "head" has 1 node(s)
+2026-11-18 22:09:32 [ℹ]  node "ip-10-42-15-175.us-west-2.compute.internal" is ready
+2026-11-18 22:09:32 [ℹ]  nodegroup "worker-w1" has 1 node(s)
+2026-11-18 22:09:32 [ℹ]  node "ip-10-42-6-1.us-west-2.compute.internal" is ready
+2026-11-18 22:09:32 [ℹ]  waiting for at least 1 node(s) to become ready in "worker-w1"
+2026-11-18 22:09:32 [ℹ]  nodegroup "worker-w1" has 1 node(s)
+2026-11-18 22:09:32 [ℹ]  node "ip-10-42-6-1.us-west-2.compute.internal" is ready
+2026-11-18 22:09:32 [ℹ]  nodegroup "worker-w2" has 1 node(s)
+2026-11-18 22:09:32 [ℹ]  node "ip-10-42-25-210.us-west-2.compute.internal" is ready
+2026-11-18 22:09:32 [ℹ]  waiting for at least 1 node(s) to become ready in "worker-w2"
+2026-11-18 22:09:32 [ℹ]  nodegroup "worker-w2" has 1 node(s)
+2026-11-18 22:09:32 [ℹ]  node "ip-10-42-25-210.us-west-2.compute.internal" is ready
+2026-11-18 22:09:32 [ℹ]  nodegroup "loadgen" has 1 node(s)
+2026-11-18 22:09:32 [ℹ]  node "ip-10-42-29-255.us-west-2.compute.internal" is ready
+2026-11-18 22:09:32 [ℹ]  waiting for at least 1 node(s) to become ready in "loadgen"
+2026-11-18 22:09:32 [ℹ]  nodegroup "loadgen" has 1 node(s)
+2026-11-18 22:09:32 [ℹ]  node "ip-10-42-29-255.us-west-2.compute.internal" is ready
+2026-11-18 22:09:32 [✔]  created 4 managed nodegroup(s) in cluster "ray-serve-phase2-rerun"
+2026-11-18 22:09:32 [ℹ]  creating addon: metrics-server
+2026-11-18 22:09:33 [ℹ]  successfully created addon: metrics-server
+2026-11-18 22:09:33 [ℹ]  kubectl command should work with "/home/ubuntu/.kube/ray-serve-phase2-rerun", try 'kubectl --kubeconfig=/home/ubuntu/.kube/ray-serve-phase2-rerun get nodes'
+2026-11-18 22:09:33 [✔]  EKS cluster "ray-serve-phase2-rerun" in "us-west-2" region is ready

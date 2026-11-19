@@ -1,0 +1,71 @@
+# In-cluster load generator driver for the Phase 2 rerun.
+# Runs on the dedicated bench-role=loadgen node. The main container installs curl
+# and k6 v0.54.0, mounts the runner + fixtures from ConfigMaps, and idles so later
+# tasks can exec the matrix runner against the serving Services.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen-driver
+  namespace: model-serving-benchmark
+  labels:
+    app: loadgen-driver
+    bench-role: loadgen
+    app.kubernetes.io/component: loadgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgen-driver
+  template:
+    metadata:
+      labels:
+        app: loadgen-driver
+        bench-role: loadgen
+        app.kubernetes.io/component: loadgen
+    spec:
+      nodeSelector:
+        bench-role: loadgen
+      containers:
+        - name: loadgen
+          image: python:3.11-slim
+          workingDir: /workspace/loadtest
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              apt-get update -qq
+              apt-get install -y --no-install-recommends curl ca-certificates tar > /dev/null
+              curl -fsSL https://github.com/grafana/k6/releases/download/v0.54.0/k6-v0.54.0-linux-amd64.tar.gz -o /tmp/k6.tar.gz
+              tar -xzf /tmp/k6.tar.gz -C /tmp
+              install -m 0755 /tmp/k6-v0.54.0-linux-amd64/k6 /usr/local/bin/k6
+              rm -rf /tmp/k6.tar.gz /tmp/k6-v0.54.0-linux-amd64
+              exec sleep infinity
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          volumeMounts:
+            - name: loadgen-scripts
+              mountPath: /workspace/loadtest/run_matrix.py
+              subPath: run_matrix.py
+            - name: loadgen-scripts
+              mountPath: /workspace/loadtest/k6_benchmark.js
+              subPath: k6_benchmark.js
+            - name: loadgen-fixtures
+              mountPath: /workspace/loadtest/fixtures/sample_payloads.jsonl
+              subPath: sample_payloads.jsonl
+            - name: results
+              mountPath: /results
+      volumes:
+        - name: loadgen-scripts
+          configMap:
+            name: loadgen-scripts
+        - name: loadgen-fixtures
+          configMap:
+            name: loadgen-fixtures
+        - name: results
+          emptyDir: {}

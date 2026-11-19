@@ -9,7 +9,7 @@ import sys
 CONCURRENCIES = [1, 4, 8, 16, 32, 64]
 ARCHITECTURES = [
     ("direct", "Direct Serving (Async Queue)"),
-    ("ray_haproxy", "Ray Serve (@serve.batch + HAProxy :30000)"),
+    ("ray_haproxy", "Ray Serve (@serve.batch + Direct Ingress :30000)"),
 ]
 
 def parse_json(fpath):

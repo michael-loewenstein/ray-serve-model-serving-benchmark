@@ -1,0 +1,57 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: ray-serve-phase3-rerun
+  region: us-west-2
+  version: "1.34"
+  tags:
+    project: ray-serve-benchmark
+    purpose: phase3-gpu-rerun
+availabilityZones:
+  - us-west-2a
+  - us-west-2b
+vpc:
+  cidr: 10.42.0.0/16
+  nat:
+    gateway: Single
+iam:
+  withOIDC: true
+managedNodeGroups:
+  - name: head
+    instanceType: c6i.2xlarge
+    amiFamily: AmazonLinux2023
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    availabilityZones: ["us-west-2a"]
+    labels: {bench-role: head}
+    tags: {project: ray-serve-benchmark}
+  - name: gpu-w1
+    instanceType: g6.xlarge
+    amiFamily: AmazonLinux2023
+    ami: ami-0bd8ae7fb660d28d7
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    availabilityZones: ["us-west-2a"]
+    labels: {bench-role: gpu, bench-slot: gpu1}
+    tags: {project: ray-serve-benchmark}
+  - name: gpu-w2
+    instanceType: g6.xlarge
+    amiFamily: AmazonLinux2023
+    ami: ami-0bd8ae7fb660d28d7
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    availabilityZones: ["us-west-2a"]
+    labels: {bench-role: gpu, bench-slot: gpu2}
+    tags: {project: ray-serve-benchmark}
+  - name: loadgen
+    instanceType: c6i.2xlarge
+    amiFamily: AmazonLinux2023
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    availabilityZones: ["us-west-2a"]
+    labels: {bench-role: loadgen}
+    tags: {project: ray-serve-benchmark}

@@ -1,0 +1,81 @@
+# In-cluster load generator driver for the Phase 3 GPU rerun.
+# Runs on the dedicated bench-role=loadgen node. The runner container installs
+# curl, ca-certificates, tar, and k6 v0.54.0, then idles so later tasks can exec
+# the GPU matrix runner against the two serving Services.
+#
+# Mount layout (the k6 script opens fixtures with a path RELATIVE to the script
+# file, and the script lives at /workspace/loadgen/k6_embed.js):
+#   /workspace/loadgen/k6_embed.js        <- phase3-loadgen-scripts (subPath)
+#   /workspace/loadgen/run_gpu_matrix.py <- phase3-loadgen-scripts (subPath)
+#   /workspace/fixtures/queries.jsonl     <- gpu-embed-fixtures (subPath)
+# so that open('../fixtures/queries.jsonl') from /workspace/loadgen resolves to
+# /workspace/fixtures/queries.jsonl. Later tasks download their runner into
+# /workspace/loadgen alongside these subPath mounts. Results go to emptyDir
+# /results before upload.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen-driver
+  namespace: model-serving-benchmark
+  labels:
+    app: loadgen-driver
+    bench-role: loadgen
+    app.kubernetes.io/component: loadgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgen-driver
+  template:
+    metadata:
+      labels:
+        app: loadgen-driver
+        bench-role: loadgen
+        app.kubernetes.io/component: loadgen
+    spec:
+      nodeSelector:
+        bench-role: loadgen
+      containers:
+        - name: runner
+          image: python:3.11-slim
+          workingDir: /workspace/loadgen
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              apt-get update -qq
+              apt-get install -y --no-install-recommends curl ca-certificates tar > /dev/null
+              curl -fsSL https://github.com/grafana/k6/releases/download/v0.54.0/k6-v0.54.0-linux-amd64.tar.gz -o /tmp/k6.tar.gz
+              tar -xzf /tmp/k6.tar.gz -C /tmp
+              install -m 0755 /tmp/k6-v0.54.0-linux-amd64/k6 /usr/local/bin/k6
+              rm -rf /tmp/k6.tar.gz /tmp/k6-v0.54.0-linux-amd64
+              exec sleep infinity
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "2Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          volumeMounts:
+            - name: loadgen-scripts
+              mountPath: /workspace/loadgen/k6_embed.js
+              subPath: k6_embed.js
+            - name: loadgen-scripts
+              mountPath: /workspace/loadgen/run_gpu_matrix.py
+              subPath: run_gpu_matrix.py
+            - name: gpu-embed-fixtures
+              mountPath: /workspace/fixtures/queries.jsonl
+              subPath: queries.jsonl
+            - name: results
+              mountPath: /results
+      volumes:
+        - name: loadgen-scripts
+          configMap:
+            name: phase3-loadgen-scripts
+        - name: gpu-embed-fixtures
+          configMap:
+            name: gpu-embed-fixtures
+        - name: results
+          emptyDir: {}

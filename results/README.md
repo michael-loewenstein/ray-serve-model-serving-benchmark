@@ -1,6 +1,6 @@
 # Benchmark Results & Statistical Reconstruction
 
-This directory contains the complete raw experimental dataset and analysis code for the Phase 2 benchmark.
+This directory contains the raw experimental datasets and analysis code for the Phase 2 benchmark. The files directly in this directory are the **historical October 2026 run**. The current Phase 2 rerun (2026-11-18) lives in [`phase2-rerun-2026-11-18/`](phase2-rerun-2026-11-18/) and is reported in [`phase2-rerun-2026-11-18-report.md`](phase2-rerun-2026-11-18-report.md).
 
 ## Files
 
@@ -11,13 +11,23 @@ This directory contains the complete raw experimental dataset and analysis code 
 
 ## Running the Analysis
 
-```bash
-# From repository root:
-python results/analyze.py
+`analyze.py` requires explicit `--data` and `--output` paths; there are no defaults, so a bare run cannot overwrite a historical summary.
 
-# Or from this directory:
-cd results && python analyze.py
+Current dataset, the Phase 2 rerun (2026-11-18). Run from the repository root:
+
+```bash
+python3 results/analyze.py \
+  --data results/phase2-rerun-2026-11-18/raw_trials.json \
+  --output results/phase2-rerun-2026-11-18/summary_report.md
 ```
+
+The October 2026 dataset in this directory (`raw_trials.json`, `raw_trials.csv`, `summary_report.md`) is historical. Leave it unchanged. If you need to regenerate its summary, pass its paths explicitly (`--data results/raw_trials.json --output <path>`). Write to a scratch path rather than over `results/summary_report.md`, because the current `analyze.py` header and formatting differ from the version that produced the committed file.
+
+## Label Correction (2026-11-18)
+
+The arm previously called **"Worker HAProxy :30000"** is **Ray Serve direct ingress**. In Ray 2.55.1, `:8000` is the HAProxy/Python ingress and `:30000–31000` are the direct-ingress HTTP servers inside Serve replicas. The benchmark Service maps `8000 → targetPort 30000`, so it bypasses HAProxy.
+
+Only the `architecture` label and explanatory strings in `raw_trials.json` / `raw_trials.csv` were updated; **no measurement values changed**. The internal `target_key` remains `ray_haproxy` for schema compatibility. See [docs/topology-and-request-path.md](../docs/topology-and-request-path.md).
 
 ## Statistical Methodology
 
@@ -34,8 +44,8 @@ cd results && python analyze.py
    Nominal matrix total: $15 \times 1,500 = 22,500$ requests.
    Due to k6 `constant-arrival-rate` microsecond boundary ticks during the final millisecond before stage exit, 8 trials emitted 1,501 requests:
    - Direct Serving: 4 trials @ 1,500 + 1 trial @ 1,501 = **7,501 requests**
-   - Ray Python Proxy: 2 trials @ 1,500 + 3 trials @ 1,501 = **7,503 requests**
-   - Ray Worker HAProxy: 1 trial @ 1,500 + 4 trials @ 1,501 = **7,504 requests**
+   - Ray Default Python Proxy: 2 trials @ 1,500 + 3 trials @ 1,501 = **7,503 requests**
+   - Ray Direct Ingress: 1 trial @ 1,500 + 4 trials @ 1,501 = **7,504 requests**
    - **Total:** $7,501 + 7,503 + 7,504 = \mathbf{22,508\text{ requests}}$
 
 4. **Raw Data Limits & p99 Interpretation:**

@@ -1,17 +1,18 @@
 # Phase 3: Lightweight GPU Embeddings Implementation Plan
 ## (Sentence-Transformers `all-MiniLM-L6-v2` — Dynamic Micro-Batching & GPU Efficiency)
 
-**Objective:** Benchmark GPU scheduling, Tensor Core utilization, and dynamic micro-batching efficiency by comparing **Direct Serving (FastAPI + PyTorch + Async Queue Batching)** vs. **Ray Serve (`@serve.batch` + Worker HAProxy :30000)** on cloud infrastructure.
+**Objective:** Benchmark GPU scheduling, Tensor Core utilization, and dynamic micro-batching efficiency by comparing **Direct Serving (FastAPI + PyTorch + Async Queue Batching)** vs. **Ray Serve (`@serve.batch` + Direct Ingress :30000)** on cloud infrastructure.
 
 ---
 
 ## 1. Architectural & Infrastructure Specifications
 
 ### 1.1 Hardware & Node Pool
-Both architectures and the benchmark driver run under 100% hardware and zone parity using Karpenter on AWS:
-- **Node Architecture:** AWS **`g6`** (e.g. `g6.xlarge`: 4 vCPUs, 16 GiB RAM, 1x NVIDIA L4 24GB Tensor Core GPU)
+Both GPU architectures run in the same zone using Karpenter on AWS. The driver is pinned to a non-GPU instance so it cannot consume or contend with a GPU node:
+- **Node Architecture:** AWS **`g6.xlarge`** (4 vCPUs, 16 GiB RAM, 1x NVIDIA L4 24GB Tensor Core GPU) for both GPU servers; **`c6i.2xlarge`** for the k6 driver (pinned 2026-11-18; the original exploratory run left the driver type unpinned, so its node is not recorded).
 - **Zone:** **`us-east-1d`** (co-located, zero inter-AZ hops)
 - **Capacity Type:** **`on-demand`**
+- **Node Isolation:** Not enforced. Instance type and zone are pinned, but no anti-affinity is configured; the driver and servers could share a node. See [topology-and-request-path.md](topology-and-request-path.md).
 - **Node Selector:**
   ```yaml
   nodeSelector:
@@ -91,7 +92,7 @@ Both architectures and the benchmark driver run under 100% hardware and zone par
   - `benchmarks/gpu-embed/ray/rayservice-embed.yaml`: KubeRay `RayService` CRD configured with:
     - Worker group requesting 1 GPU on `g6` in `us-east-1d`.
     - `RAY_SERVE_ENABLE_HA_PROXY=1`.
-    - Worker direct service on port 30000: `rayservice-gpu-embed-haproxy-svc`.
+    - Direct-ingress Service: `rayservice-gpu-embed-haproxy-svc` exposes Service port 8000 → `targetPort: 30000` (the replica's direct-ingress HTTP server). HAProxy on `:8000` is bypassed.
 - **Verification:**
   ```bash
   kubectl apply -f benchmarks/gpu-embed/ray/rayservice-embed.yaml -n model-serving-benchmark

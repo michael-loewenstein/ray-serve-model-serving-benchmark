@@ -2,9 +2,12 @@
 
 **Target Environment:** Kubernetes on AWS (EKS, `us-east-1`), namespace `model-serving-benchmark`  
 **Workload:** Open-Source CPU XGBoost Binary Classifier (50 numeric features, 100 trees, depth 6)  
-**Hardware & Nodes:** 100% Matched on AWS `c6i.2xlarge` On-Demand node (Intel Xeon 8375C @ 2.90GHz, 8 vCPUs, 16 GiB RAM) in `us-east-1d`.  
+**Hardware & Nodes:** 100% matched on AWS `c6i.2xlarge` On-Demand nodes (Intel Xeon 8375C @ 2.90GHz, 8 vCPUs, 16 GiB RAM) in `us-east-1d`.  
 **Co-Location Standard:** All workloads (Direct Serving, Ray Serve, and Benchmark Loadgen) co-located in `us-east-1d` with **zero cross-AZ hops**.  
-**Parity Standard:** Exactly 2 active replicas per architecture, 1 vCPU / 2 GiB memory per replica, `OMP_NUM_THREADS=1`.
+**Parity Standard:** Exactly 2 active replicas per architecture, 1 vCPU / 2 GiB memory per replica, `OMP_NUM_THREADS=1`.  
+**Node Isolation:** Not enforced. Manifests pin instance type and zone only; pod anti-affinity was not configured, so pods from different architectures could share a node. Actual node assignment was not recorded. See [Cluster Topology & Request Path](topology-and-request-path.md).
+
+> **Architecture Label Correction (2026-11-18):** The arm previously called "Worker HAProxy :30000" is **Ray Serve direct ingress**. In Ray 2.55.1, port 8000 is the Ray HTTP ingress (HAProxy when enabled); ports 30000–31000 are the direct-ingress HTTP servers inside Serve replicas. The benchmark Service maps `8000 → targetPort 30000`, so it bypasses HAProxy. Measurements are unchanged; the architectural attribution is corrected. See [topology-and-request-path.md](topology-and-request-path.md).
 
 ---
 
@@ -17,7 +20,7 @@ The original benchmark specification established two alternative or conjunctive 
 - **Relative Overhead Gate:** Added latency $\\le 10\%$ over the direct serving baseline.
 - **Absolute Overhead Gate:** Added latency $\\le 3.0\\text{ ms}$ over the direct serving baseline.
 
-| Metric | Direct Serving Baseline (Median) | Ray Serve (Worker HAProxy :30000) (Median) | Absolute Overhead | Relative Overhead | Absolute Gate ($\le 3.0\text{ ms}$) | Relative Gate ($\le 10\%$) |
+| Metric | Direct Serving Baseline (Median) | Ray Serve Direct Ingress (Median) | Absolute Overhead | Relative Overhead | Absolute Gate ($\le 3.0\text{ ms}$) | Relative Gate ($\le 10\%$) |
 |---|---|---|---|---|---|---|
 | **p50** | **0.973 ms** (Mean: 1.001 ± 0.083) | **1.274 ms** (Mean: 1.315 ± 0.097) | **+0.301 ms** | **+30.9%** | **PASS** | **FAIL** |
 | **p90** | **1.151 ms** (Mean: 1.183 ± 0.110) | **1.768 ms** (Mean: 1.761 ± 0.087) | **+0.617 ms** | **+53.6%** | **PASS** | **FAIL** |
@@ -27,7 +30,7 @@ The original benchmark specification established two alternative or conjunctive 
 **Corrected H1 Conclusion:**
 - **Absolute Limit ($\le 3.0\text{ ms}$): PASSED.** Both median (+0.301 ms) and p99 (+1.151 ms) overheads remain well below the 3.0 ms absolute platform threshold.
 - **Relative Limit ($\le 10\%$): FAILED.** Because Direct Serving on bare Linux sockets achieves a sub-millisecond baseline ($p50 = 0.973\text{ ms}$), even an overhead of ~300 µs constitutes a **+30.9% relative increase**, and +1.151 ms at p99 constitutes a **+79.7% relative increase**.
-- **Verdict:** If the platform decision rule strictly requires passing *both* the 10% relative and 3 ms absolute gates, **H1 has not fully passed**. Ray Serve's HAProxy path introduces an unavoidable, measurable routing cost of ~0.30 ms (median) to 1.15 ms (p99) that must be justified by its multi-model orchestration, lifecycle management, and dynamic batching capabilities.
+- **Verdict:** If the platform decision rule strictly requires passing *both* the 10% relative and 3 ms absolute gates, **H1 has not fully passed**. Ray Serve's direct-ingress path introduces an unavoidable, measurable routing cost of ~0.30 ms (median) to 1.15 ms (p99) that must be justified by its multi-model orchestration, lifecycle management, and dynamic batching capabilities.
 
 ---
 
@@ -39,12 +42,14 @@ The original benchmark specification established two alternative or conjunctive 
   <img src="images/phase2_transit_breakdown.svg" alt="Phase 2 Per-Hop Transit Breakdown" width="850">
 </p>
 
+*Chart legends retain the original "Worker HAProxy" label; read it as "Ray Serve Direct Ingress (`:30000`)".*
+
 ## 2. Reconciled Request Accounting & Execution Inventory
 
 To ensure complete arithmetic reproducibility, below is the exact request reconciliation across the 15 executed trials:
 
 ### 2.1 Experimental Parameters
-- **Number of Architectures Evaluated ($K$):** 3 (Direct Serving, Ray Python Proxy, Ray Worker HAProxy).
+- **Number of Architectures Evaluated ($K$):** 3 (Direct Serving, Ray Default Python Proxy, Ray Direct Ingress).
 - **Independent Trials per Architecture ($n$):** 5.
 - **Total Executed Trials:** $3 \times 5 = \mathbf{15\text{ trials}}$ (executed in randomized order).
 - **Target Load Schedule:** 50.0 requests/second constant arrival rate.
@@ -56,8 +61,8 @@ To ensure complete arithmetic reproducibility, below is the exact request reconc
 ### 2.2 Reconciliation of the +8 Request Discrepancy (22,508 Actual Requests)
 In open-loop load generation (`k6` `constant-arrival-rate`), the iteration timer operates on microsecond ticks ($1\text{ iteration} / 20\text{ ms}$). Depending on the microsecond boundary at which the test stage halts, an extra iteration can be emitted during the final millisecond before stage exit. Across the 15 trials, 8 trials emitted exactly 1,501 requests instead of 1,500:
 - **Direct Serving:** 4 trials with 1,500 reqs + 1 trial with 1,501 reqs (Trial 4) = **7,501 requests**.
-- **Ray Python Proxy:** 2 trials with 1,500 reqs (Trials 2, 4) + 3 trials with 1,501 reqs (Trials 1, 3, 5) = **7,503 requests**.
-- **Ray Worker HAProxy:** 1 trial with 1,500 reqs (Trial 1) + 4 trials with 1,501 reqs (Trials 2, 3, 4, 5) = **7,504 requests**.
+- **Ray Default Python Proxy:** 2 trials with 1,500 reqs (Trials 2, 4) + 3 trials with 1,501 reqs (Trials 1, 3, 5) = **7,503 requests**.
+- **Ray Direct Ingress:** 1 trial with 1,500 reqs (Trial 1) + 4 trials with 1,501 reqs (Trials 2, 3, 4, 5) = **7,504 requests**.
 - **Sum:** $7,501 + 7,503 + 7,504 = \mathbf{22,508\text{ total requests}}$.
 
 
@@ -82,8 +87,8 @@ Instead, we compute statistics **over the 5 independent trial-level percentile e
 | Architecture | Achieved Goodput (req/s) | p50 Median [IQR] (ms) | p50 Mean ± 95% CI (ms) | p90 Median (ms) | p95 Median [IQR] (ms) | p95 Mean ± 95% CI (ms) | p99 Median [IQR] (ms) | p99 Mean ± 95% CI (ms) | Failure Rate |
 |---|---|---|---|---|---|---|---|---|---|
 | **Direct Serving (Uvicorn)** | 50.00 (Mean: 50.01 ± 0.017) | **0.973** [0.006] | 1.001 ± 0.083 | 1.151 | **1.246** [0.017] | 1.302 ± 0.170 | **1.444** [0.022] | 1.533 ± 0.242 | **0.00%** (0 / 7,501) |
-| **Ray Serve (Python Proxy)** | 50.03 (Mean: 50.02 ± 0.020) | **1.478** [0.129] | 1.530 ± 0.145 | 1.959 | **2.069** [0.465] | 3.094 ± 2.781 | **4.865** [3.537] | 6.320 ± 7.338 | **0.00%** (0 / 7,503) |
-| **Ray Serve (Worker HAProxy :30000)** | 50.03 (Mean: 50.02 ± 0.017) | **1.274** [0.119] | 1.315 ± 0.097 | 1.768 | **1.856** [0.116] | 1.835 ± 0.087 | **2.595** [0.771] | 2.527 ± 0.702 | **0.00%** (0 / 7,504) |
+| **Ray Serve (Default Python Proxy :8000)** | 50.03 (Mean: 50.02 ± 0.020) | **1.478** [0.129] | 1.530 ± 0.145 | 1.959 | **2.069** [0.465] | 3.094 ± 2.781 | **4.865** [3.537] | 6.320 ± 7.338 | **0.00%** (0 / 7,503) |
+| **Ray Serve (Direct Ingress :30000)** | 50.03 (Mean: 50.02 ± 0.017) | **1.274** [0.119] | 1.315 ± 0.097 | 1.768 | **1.856** [0.116] | 1.835 ± 0.087 | **2.595** [0.771] | 2.527 ± 0.702 | **0.00%** (0 / 7,504) |
 
 ### 3.3 Raw Individual Trial Results
 The table below documents every individual measurement across all 15 trials:
@@ -95,23 +100,23 @@ The table below documents every individual measurement across all 15 trials:
 | | 3 | 1,500 | 1,500 | 0 | 50.00 | 0.965 | 1.129 | 1.256 | 1.464 | 14.19 |
 | | 4 | 1,501 | 1,501 | 0 | 50.03 | 0.971 | 1.139 | 1.225 | 1.444 | 15.02 |
 | | 5 | 1,500 | 1,500 | 0 | 50.00 | 0.977 | 1.156 | 1.246 | 1.442 | 13.95 |
-| **Ray Serve (Python Proxy)** | 1 | 1,501 | 1,501 | 0 | 50.03 | 1.443 | 1.821 | 1.954 | 2.268 | 21.04 |
+| **Ray Serve (Default Python Proxy :8000)** | 1 | 1,501 | 1,501 | 0 | 50.03 | 1.443 | 1.821 | 1.954 | 2.268 | 21.04 |
 | | 2 | 1,500 | 1,500 | 0 | 50.00 | 1.442 | 1.838 | 1.942 | 2.163 | 18.72 |
 | | 3 | 1,501 | 1,501 | 0 | 50.03 | 1.478 | 1.959 | 2.069 | 4.865 | 29.41 |
 | | 4 | 1,500 | 1,500 | 0 | 50.00 | 1.716 | 4.312 | 7.087 | 16.501 | 48.91 |
 | | 5 | 1,501 | 1,501 | 0 | 50.03 | 1.572 | 2.115 | 2.419 | 5.805 | 32.16 |
-| **Ray Serve (Worker HAProxy :30000)** | 1 | 1,500 | 1,500 | 0 | 50.00 | 1.274 | 1.691 | 1.763 | 2.071 | 2.86 |
+| **Ray Serve (Direct Ingress :30000)** | 1 | 1,500 | 1,500 | 0 | 50.00 | 1.274 | 1.691 | 1.763 | 2.071 | 2.86 |
 | | 2 | 1,501 | 1,501 | 0 | 50.03 | 1.245 | 1.688 | 1.760 | 1.868 | 2.91 |
 | | 3 | 1,501 | 1,501 | 0 | 50.03 | 1.259 | 1.768 | 1.856 | 3.257 | 14.81 |
 | | 4 | 1,501 | 1,501 | 0 | 50.03 | 1.418 | 1.815 | 1.879 | 2.842 | 11.23 |
 | | 5 | 1,501 | 1,501 | 0 | 50.03 | 1.378 | 1.842 | 1.916 | 2.595 | 9.47 |
 
 ### 3.4 Context on Tail Latency Variance & p99 Interpretation
-The wide confidence interval on the Python Proxy mean ($p95 = 3.094 \pm 2.781\text{ ms}$, $p99 = 6.320 \pm 7.338\text{ ms}$) is directly explained by **Trial 4**:
+The wide confidence interval on the Default Python Proxy mean ($p95 = 3.094 \pm 2.781\text{ ms}$, $p99 = 6.320 \pm 7.338\text{ ms}$) is directly explained by **Trial 4**:
 * Trials 1, 2, 3, and 5 exhibited low tail latency ($p95 \in [1.94, 2.42]\text{ ms}$, $p99 \in [2.16, 5.81]\text{ ms}$).
 * Trial 4 suffered a temporary tail surge ($p95 = 7.087\text{ ms}$, $p99 = 16.501\text{ ms}$, Max = $48.91\text{ ms}$).
 * In a 5-sample set, this single outlier trial inflates the sample standard deviation ($s = 2.24$ at p95) and results in a large Student’s $t$ multiplier ($t = 2.776$).
-* By contrast, Worker HAProxy showed consistently tight tail latency across all 5 trials ($p95 \in [1.760, 1.916]\text{ ms}$, with an IQR of only $0.116\text{ ms}$).
+* By contrast, direct ingress showed consistently tight tail latency across all 5 trials ($p95 \in [1.760, 1.916]\text{ ms}$, with an IQR of only $0.116\text{ ms}$).
 
 **Methodological Caution on p99:** In a 30-second trial at 50 RPS (1,500 requests), the p99 percentile reflects only the ~15 highest latency requests. With $n=5$ trials, rare scheduling interruptions, garbage collection cycles, or micro-burst queue build-ups can heavily influence tail variance. Therefore, p99 measurements should be interpreted as sensitivity indicators under burstiness rather than absolute steady-state guarantees.
 
@@ -135,9 +140,11 @@ The reported transit figure is formally defined as the **estimated client-side a
 
 ---
 
-## 5. Architectural Precision: What the HAProxy Route Bypasses
+## 5. Architectural Precision: What the Direct-Ingress Route Bypasses
 
-Routing directly to the worker pod's HAProxy listener on port 30000 is an **alternative, worker-colocated routing topology**, distinct from Ray Serve's default architecture.
+Routing directly to the replica's direct-ingress HTTP server on port 30000 is an **alternative routing topology**, distinct from Ray Serve's default ingress on port 8000.
+
+In Ray 2.55.1, `RAY_SERVE_ENABLE_HA_PROXY=1` makes port 8000 the HAProxy frontend and force-enables direct ingress, which starts an HTTP server inside each ingress-deployment replica on a port in `[30000, 31000]`. HAProxy forwards to those servers. The benchmark's custom Service targets `targetPort: 30000`, so it connects to the replica's server directly and **does not traverse HAProxy**. For this single-deployment application, the ingress deployment *is* the model deployment, so the request terminates in the XGBoost replica itself; neither a proxy actor nor an inter-node actor RPC is involved.
 
 ### 5.1 What Remains Active in Ray Serve
 * **Actor Lifecycle Management:** KubeRay and Ray's GCS/ServeController manage pod lifecycles, health checks, and automatic actor restarts upon failure.
@@ -146,13 +153,14 @@ Routing directly to the worker pod's HAProxy listener on port 30000 is an **alte
 * **Observability:** Prometheus metrics, replica-level histograms, and queue metrics on port 8080 remain active.
 
 ### 5.2 What Is Bypassed
-* **Centralized Python Proxy Actor:** Requests bypass the head-node `SERVE_PROXY_ACTOR` process completely.
-* **Inter-Node gRPC Forwarding Mesh:** Kubernetes ClusterIP load balancing selects the worker directly, bypassing Ray's internal cross-node RPC dispatch.
+* **Serve HTTP proxy:** The default Python proxy (`proxy_location: EveryNode`, `:8000`) is bypassed; so is the HAProxy process that would occupy `:8000` when HAProxy mode is enabled. The tested Service never connects to `:8000`.
+* **Inter-Node RPC:** Kubernetes ClusterIP selects a worker pod and DNATs to `:30000`, so Ray's internal cross-node actor dispatch is not on the path for this single-deployment app.
+* **Head node:** The head is not a Service endpoint for this arm. It remains the control plane (GCS, Serve controller, dashboard).
 
 ### 5.3 Attribution of the Tail Latency Reduction (`max_ongoing_requests`)
 The reduction in $p99$ latency down to 2.59 ms was achieved by increasing `max_ongoing_requests` from 10 to 50, alongside **node and single-zone co-location in `us-east-1d`**.
-- While increasing `max_ongoing_requests` to 50 raised the cluster concurrency ceiling from 20 to 100 in-flight requests (preventing proxy queue buildup under Poisson arrival micro-bursts), single-zone co-location also eliminated cross-AZ packet latency jitter.
-- The tail latency improvement is therefore attributed to the **combination of removing the proxy-boundary queue constraint AND eliminating inter-AZ network transit**.
+- While increasing `max_ongoing_requests` to 50 raised the cluster concurrency ceiling from 20 to 100 in-flight requests (preventing ingress-boundary queue buildup under Poisson arrival micro-bursts), single-zone co-location also eliminated cross-AZ packet latency jitter.
+- The tail latency improvement is therefore attributed to the **combination of removing the ingress queue constraint AND eliminating inter-AZ network transit**.
 
 ---
 
@@ -164,4 +172,4 @@ The reduction in $p99$ latency down to 2.59 ms was achieved by increasing `max_o
 3. **Single Workload Envelope:** A single lightweight CPU XGBoost tabular model (50 features, 100 trees, depth 6, ~0.5–0.8 ms inference).
 
 ### 6.2 Scoped Takeaway
-For sub-millisecond CPU tabular inference workloads, an absolute overhead of ~0.30 ms (p50) and ~1.15 ms (p99) represents a large relative increase (+31% to +80%) over direct socket serving. Teams evaluating Ray Serve for sub-millisecond workloads must determine whether this ~300 µs proxy hop is acceptable in exchange for Ray's actor lifecycle management and deployment features. For workloads where inference compute exceeds 10–50 ms, this fixed ~0.3 ms routing cost becomes a minor fraction of overall request duration.
+For sub-millisecond CPU tabular inference workloads, an absolute overhead of ~0.30 ms (p50) and ~1.15 ms (p99) represents a large relative increase (+31% to +80%) over direct socket serving. Teams evaluating Ray Serve for sub-millisecond workloads must determine whether this ~300 µs ingress cost is acceptable in exchange for Ray's actor lifecycle management and deployment features. For workloads where inference compute exceeds 10–50 ms, this fixed ~0.3 ms routing cost becomes a minor fraction of overall request duration.

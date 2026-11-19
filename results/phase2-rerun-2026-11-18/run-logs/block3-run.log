@@ -1,0 +1,46 @@
+
+[EXEC] Running ray_haproxy_local (50 RPS, 15s)...
+--> Warmup complete for Ray Serve (HAProxy local control)
+
+[EXEC] Running ray_direct_local (50 RPS, 15s)...
+--> Warmup complete for Ray Serve (Direct Ingress local control)
+================================================================
+ Matrix Benchmark (block3): 6 Total Randomized Trials
+ Rate: 50 req/s | Duration: 30s per trial
+ Targets: ['Ray Serve (Direct Ingress local control)', 'Ray Serve (Direct Ingress local control)']
+ Random Order: ['ray_direct_local#3', 'ray_direct_local#2', 'ray_direct_local#1', 'ray_haproxy_local#2', 'ray_haproxy_local#3', 'ray_haproxy_local#1']
+================================================================
+
+[1/6] Starting Trial #3 for Ray Serve (Direct Ingress local control)...
+
+[EXEC] Running ray_direct_local (50 RPS, 30s)...
+--> Result: p50=1.271ms, p95=1.477ms, Goodput=50.0 req/s
+
+[2/6] Starting Trial #2 for Ray Serve (Direct Ingress local control)...
+
+[EXEC] Running ray_direct_local (50 RPS, 30s)...
+--> Result: p50=1.256ms, p95=1.447ms, Goodput=50.03 req/s
+
+[3/6] Starting Trial #1 for Ray Serve (Direct Ingress local control)...
+
+[EXEC] Running ray_direct_local (50 RPS, 30s)...
+--> Result: p50=1.276ms, p95=1.501ms, Goodput=50.03 req/s
+
+[4/6] Starting Trial #2 for Ray Serve (HAProxy local control)...
+
+[EXEC] Running ray_haproxy_local (50 RPS, 30s)...
+--> Result: p50=1.394ms, p95=1.57ms, Goodput=50.03 req/s
+
+[5/6] Starting Trial #3 for Ray Serve (HAProxy local control)...
+
+[EXEC] Running ray_haproxy_local (50 RPS, 30s)...
+--> Result: p50=1.415ms, p95=1.594ms, Goodput=50.0 req/s
+
+[6/6] Starting Trial #1 for Ray Serve (HAProxy local control)...
+
+[EXEC] Running ray_haproxy_local (50 RPS, 30s)...
+--> Result: p50=1.412ms, p95=1.589ms, Goodput=50.03 req/s
+[OK] Exported raw JSON results in analyze.py schema to: /results/raw_trials.json
+[OK] Exported raw CSV results to: /results/raw_trials.csv
+
+Benchmark matrix run complete.

@@ -1,0 +1,52 @@
+
+[preflight:python] Cluster nodes
+  info  bench-role=head: 1 node(s)
+  info  bench-role=worker: 2 node(s)
+  info  bench-role=loadgen: 1 node(s)
+  info  ip-10-42-15-175.us-west-2.compute.internal c6i.2xlarge us-west-2a
+  info  ip-10-42-25-210.us-west-2.compute.internal c6i.2xlarge us-west-2a
+  info  ip-10-42-29-255.us-west-2.compute.internal c6i.2xlarge us-west-2a
+  info  ip-10-42-6-1.us-west-2.compute.internal c6i.2xlarge us-west-2a
+  PASS  4 nodes, one head / two workers / one loadgen, all c6i.2xlarge in us-west-2a
+
+[preflight:python] Pods for arm python-proxy
+  info  head: ray-python-proxy-rerun-ppc9c-head-z94s7
+  info  workers: ray-python-proxy-rerun-ppc9c-worker-worker-ljsfq ray-python-proxy-rerun-ppc9c-worker-worker-zpfvt
+  info  direct client pod: direct-serving-rerun-575c95656b-hjhlp
+  PASS  RayService ray-python-proxy-rerun pods and Direct baseline pods are present
+  info  head proxy is present but is not a Service endpoint (Services select ray.io/node-type=worker)
+
+[preflight:python] Ray version
+  info  ray, version 2.60.0
+  PASS  Ray 2.60.0
+
+[preflight:python] Serve proxy actors
+  info  HAProxyManager actors: 0
+  info  proxy actors (grep -i proxy): 3
+  PASS  proxy actor count matches mode python
+
+[preflight:python] Listener ports on worker pods
+  info  ray-python-proxy-rerun-ppc9c-worker-worker-ljsfq: :8000 present (direct ingress disabled in python mode)
+  info  ray-python-proxy-rerun-ppc9c-worker-worker-zpfvt: :8000 present (direct ingress disabled in python mode)
+  PASS  :8000 listener on every checked worker (no direct-ingress listener expected)
+
+[preflight:python] Service endpoints and targetPorts
+  info  direct-serving-svc targetPort=8000
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+  info  direct-serving-svc endpoints (2): direct-serving-rerun-575c95656b-hjhlp direct-serving-rerun-575c95656b-mws26
+  info  ray-python-proxy-svc targetPort=8000
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+  info  ray-python-proxy-svc endpoints (2): ray-python-proxy-rerun-ppc9c-worker-worker-ljsfq ray-python-proxy-rerun-ppc9c-worker-worker-zpfvt
+  PASS  all Services have the expected targetPorts and endpoints
+
+[preflight:python] Serve configuration and replica health
+  info  serveConfigV2 sets max_ongoing_requests: 1000
+  info  RUNNING replicas: 2
+  PASS  Serve reports 2 healthy replicas and max_ongoing_requests=1000
+
+[preflight:python] Functional /infer requests
+  info  http://ray-python-proxy-svc:8000/infer: 10/10 HTTP 200 with a numeric prediction
+  info  http://direct-serving-svc:8000/infer: 10/10 HTTP 200 with a numeric prediction
+  PASS  10/10 HTTP 200 for every Service in this mode
+
+[preflight:python] PASS

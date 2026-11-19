@@ -1,0 +1,65 @@
+
+[preflight:local] Cluster nodes
+  info  bench-role=head: 1 node(s)
+  info  bench-role=worker: 2 node(s)
+  info  bench-role=loadgen: 1 node(s)
+  info  ip-10-42-15-175.us-west-2.compute.internal c6i.2xlarge us-west-2a
+  info  ip-10-42-25-210.us-west-2.compute.internal c6i.2xlarge us-west-2a
+  info  ip-10-42-29-255.us-west-2.compute.internal c6i.2xlarge us-west-2a
+  info  ip-10-42-6-1.us-west-2.compute.internal c6i.2xlarge us-west-2a
+  PASS  4 nodes, one head / two workers / one loadgen, all c6i.2xlarge in us-west-2a
+
+[preflight:local] Pods for arm local
+  info  head: ray-haproxy-local-rerun-bn7dk-head-t48f2
+  info  workers: ray-haproxy-local-rerun-bn7dk-worker-worker-gv2zr
+  info  direct client pod: direct-serving-rerun-575c95656b-hjhlp
+  PASS  RayService ray-haproxy-local-rerun pods and Direct baseline pods are present
+  info  head proxy is present but is not a Service endpoint (Services select ray.io/node-type=worker)
+
+[preflight:local] Ray version
+  info  ray, version 2.60.0
+  PASS  Ray 2.60.0
+
+[preflight:local] HAProxy binary
+  info  ray-haproxy-local-rerun-bn7dk-head-t48f2: /home/ray/anaconda3/lib/python3.11/site-packages/ray_haproxy/bin/haproxy -> HAProxy version 2.8.25-5cf5d0683 2026/06/26 - https://haproxy.org/
+  info  ray-haproxy-local-rerun-bn7dk-worker-worker-gv2zr: /home/ray/anaconda3/lib/python3.11/site-packages/ray_haproxy/bin/haproxy -> HAProxy version 2.8.25-5cf5d0683 2026/06/26 - https://haproxy.org/
+  PASS  HAProxy 2.8.x on head and workers
+
+[preflight:local] Serve proxy actors
+  info  HAProxyManager actors: 2
+  info  proxy actors (grep -i proxy): 3
+  PASS  proxy actor count matches mode local
+
+[preflight:local] Listener ports on worker pods
+  info  ray-haproxy-local-rerun-bn7dk-worker-worker-gv2zr: :8000 present; direct-ingress port set: 30000
+  PASS  :8000 and a common :300xx listener on every checked worker
+
+[preflight:local] Service endpoints and targetPorts
+  info  direct-serving-svc targetPort=8000
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+  info  direct-serving-svc endpoints (2): direct-serving-rerun-575c95656b-hjhlp direct-serving-rerun-575c95656b-mws26
+  info  ray-haproxy-w1-svc targetPort=8000
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+  info  ray-haproxy-w1-svc endpoints (1): ray-haproxy-local-rerun-bn7dk-worker-worker-gv2zr
+  info  ray-direct-w1-svc targetPort=30000
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+  info  ray-direct-w1-svc endpoints (1): ray-haproxy-local-rerun-bn7dk-worker-worker-gv2zr
+  PASS  all Services have the expected targetPorts and endpoints
+
+[preflight:local] Serve configuration and replica health
+  info  serveConfigV2 sets max_ongoing_requests: 1000
+  info  RUNNING replicas: 1
+  PASS  Serve reports 1 healthy replicas and max_ongoing_requests=1000
+
+[preflight:local] HAProxy is in the request path (ray-haproxy-w1-svc)
+  info  HAProxy request counters before:  16
+  info  http://ray-haproxy-w1-svc:8000/infer: 10/10 HTTP 200 with a numeric prediction
+  info  HAProxy request counters after:  36
+  PASS  HAProxy request counters increased (16 -> 36)
+
+[preflight:local] Functional /infer requests
+  info  http://ray-direct-w1-svc:8000/infer: 10/10 HTTP 200 with a numeric prediction
+  info  http://direct-serving-svc:8000/infer: 10/10 HTTP 200 with a numeric prediction
+  PASS  10/10 HTTP 200 for every Service in this mode
+
+[preflight:local] PASS

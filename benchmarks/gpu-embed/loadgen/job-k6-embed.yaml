@@ -14,8 +14,12 @@ spec:
         app: benchmark-gpu-driver
     spec:
       restartPolicy: Never
+      # Driver node is pinned to a non-GPU type so it cannot contend with either
+      # GPU server and cannot consume a GPU node. The historical exploratory run
+      # did not pin an instance type, so its driver node is not recorded.
       nodeSelector:
         topology.kubernetes.io/zone: us-east-1d
+        node.kubernetes.io/instance-type: c6i.2xlarge
         karpenter.sh/capacity-type: "on-demand"
       initContainers:
         - name: init-workspace

@@ -2,11 +2,14 @@
 
 **Target Environment:** Kubernetes on AWS (EKS, `us-east-1`), namespace `model-serving-benchmark`  
 **Workload:** Hugging Face `sentence-transformers/all-MiniLM-L6-v2` in FP16 on NVIDIA L4 (384-dimensional dense embeddings)  
-**Hardware & Nodes:** Dedicated AWS **`g6.xlarge` (NVIDIA L4 24GB Tensor Core GPU, 4 vCPUs, 16 GiB RAM)** in `us-east-1d`.  
-**Co-Location Standard:** Both GPU pods and the `k6-bench-gpu` driver co-located in `us-east-1d` on matched `g6.xlarge` instances with zero cross-AZ hops.  
+**Hardware & Nodes:** AWS **`g6.xlarge` (NVIDIA L4 24GB Tensor Core GPU, 4 vCPUs, 16 GiB RAM)** in `us-east-1d`.  
+**Co-Location Standard:** Both GPU pods and the `k6-bench-gpu` driver ran in `us-east-1d` with zero cross-AZ hops. The driver's instance type was **not pinned** in the manifest, so its historical node is not recorded; it may have shared a node with a server. The Job now pins `c6i.2xlarge` for future runs.  
 **Parity Standard:** Exactly 1 GPU replica per architecture, 1x NVIDIA L4, Requests: 2000m CPU / 8 GiB RAM, Limits: 4000m CPU / 12 GiB RAM, PyTorch 2.2.0.  
+**Node Isolation:** Not enforced; instance type and zone only (no anti-affinity). See [Cluster Topology & Request Path](../docs/topology-and-request-path.md).  
 **Batching Configuration:** Max batch size = 32, Batch wait timeout = 5 ms (`0.005s`).  
 **Load Methodology:** Closed-loop client concurrency scaling (`k6` `constant-vus`).
+
+> **Architecture Label Correction (2026-11-18):** The Ray arm previously called "HAProxy :30000" is **Ray Serve direct ingress**. In Ray 2.55.1, port 8000 is the HAProxy/Python ingress, and ports 30000–31000 are the direct-ingress HTTP servers inside Serve replicas. The benchmark Service maps `8000 → targetPort 30000`, so HAProxy is bypassed. Measurements are unchanged; the label and attribution are corrected. See [topology-and-request-path.md](../docs/topology-and-request-path.md).
 
 > **Exploratory Preliminary Baseline Notice (Pre-Event Loop Decoupling):**  
 > The measurements reported below reflect an initial exploratory single-run benchmark conducted prior to decoupling `model.encode()` from the asyncio event loop in Direct Serving (`asyncio.to_thread`). Because the initial Direct Serving baseline synchronously executed model inference on the event loop, its C=32 and C=64 tail latency (p99 = 111.65 ms and 138.18 ms) contains event loop starvation artifacts. In the codebase, Direct Serving has since been decoupled via `asyncio.to_thread` and manifest version parity pinned (`torch==2.2.0`). Verified multi-trial conclusions require executing the updated 5-trial matrix runner (`benchmarks/gpu-embed/loadgen/run_embed_matrix.py`).
@@ -46,17 +49,17 @@ Evaluated under **single 30-second sustained load runs per concurrency level** u
 | Architecture | Concurrency ($C$) | Throughput (embeddings/s) | p50 (ms) | p90 (ms) | p95 (ms) | p99 (ms) | Server Reported Batch Time (ms) | Failure Rate |
 |---|---|---|---|---|---|---|---|---|
 | **Direct Serving (Async Queue)** | 1 | **93.60** | **10.41** | 10.79 | **10.87** | 11.25 | 4.49 ms | 0.00% |
-| **Ray Serve (@serve.batch)** | 1 | **85.62** | **10.93** | 13.23 | **13.57** | 15.75 | 10.40 ms | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 1 | **85.62** | **10.93** | 13.23 | **13.57** | 15.75 | 10.40 ms | 0.00% |
 | **Direct Serving (Async Queue)** | 4 | **350.18** | **11.09** | 11.73 | **11.96** | 12.68 | 4.98 ms | 0.00% |
-| **Ray Serve (@serve.batch)** | 4 | **309.59** | **12.17** | 14.57 | **15.34** | 17.70 | 11.22 ms | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 4 | **309.59** | **12.17** | 14.57 | **15.34** | 17.70 | 11.22 ms | 0.00% |
 | **Direct Serving (Async Queue)** | 8 | **715.72** | **10.70** | 11.46 | **11.80** | 13.40 | 4.99 ms | 0.00% |
-| **Ray Serve (@serve.batch)** | 8 | **563.44** | **13.40** | 16.41 | **17.54** | 21.22 | 11.59 ms | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 8 | **563.44** | **13.40** | 16.41 | **17.54** | 21.22 | 11.59 ms | 0.00% |
 | **Direct Serving (Async Queue)** | 16 | **1,266.70** | **12.06** | 13.27 | **14.04** | 17.31 | 5.37 ms | 0.00% |
-| **Ray Serve (@serve.batch)** | 16 | **951.83** | **15.89** | 20.08 | **21.75** | 26.18 | 12.29 ms | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 16 | **951.83** | **15.89** | 20.08 | **21.75** | 26.18 | 12.29 ms | 0.00% |
 | **Direct Serving (Async Queue)** | 32 | **2,271.48** | **11.75** | 16.13 | **17.76** | **111.65** | 5.72 ms | 0.00% |
-| **Ray Serve (@serve.batch)** | 32 | **1,671.63** | **16.92** | 25.58 | **28.41** | **37.50** | 9.26 ms | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 32 | **1,671.63** | **16.92** | 25.58 | **28.41** | **37.50** | 9.26 ms | 0.00% |
 | **Direct Serving (Async Queue)** | 64 (Saturated) | **1,826.88** | **32.15** | 35.86 | **46.57** | **138.18** | 5.61 ms | 0.00% |
-| **Ray Serve (@serve.batch)** | 64 (Saturated) | **1,664.16** | **34.63** | 52.17 | **58.38** | **69.04** | 21.68 ms | 0.00% |
+| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 64 (Saturated) | **1,664.16** | **34.63** | 52.17 | **58.38** | **69.04** | 21.68 ms | 0.00% |
 
 ---
 
@@ -67,6 +70,8 @@ Evaluated under **single 30-second sustained load runs per concurrency level** u
 <p align="center">
   <img src="../docs/images/phase3_gpu_latency_tail_overload.svg" alt="Phase 3 GPU Latency and Overload Tail" width="950">
 </p>
+
+*Chart legends retain the original "HAProxy :30000" label; read it as "Ray Serve Direct Ingress (`:30000`)".*
 
 ## 3. Honesty & Reproducibility Disclosures
 
@@ -107,3 +112,8 @@ Before interpreting or publishing these results, the following technical caveats
 
 5. **No Generalization Beyond This Workload:**
    - These conclusions apply strictly to **one small embedding model** (`all-MiniLM-L6-v2`, 22M parameters) on **one GPU instance type** (AWS G6 / NVIDIA L4). Larger models (e.g., 7B LLMs or multi-GPU pipeline parallel workloads) exhibit fundamentally different compute-to-overhead ratios.
+
+6. **Topology & Node Isolation:**
+   - Node assignment was not recorded, and the manifests did not configure pod anti-affinity. The k6 driver could share a node with a server; this was not controlled in the exploratory run.
+   - `STATUS_AND_TODO.txt` records teardown of **1 × `g6.8xlarge` + 2 × `g6.xlarge`**, while the current manifests specify `g6.xlarge`. The role of the `g6.8xlarge` in the measured run is not documented and should be confirmed from AWS launch history before citing node counts.
+   - See [Cluster Topology & Request Path](../docs/topology-and-request-path.md).

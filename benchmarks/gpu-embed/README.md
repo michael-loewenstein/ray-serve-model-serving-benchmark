@@ -45,6 +45,8 @@ kubectl wait --for=condition=Ready rayservice/rayservice-gpu-embed -n model-serv
 curl -s http://rayservice-gpu-embed-haproxy-svc:8000/readiness
 ```
 
+> **Port note:** the Service maps port 8000 to `targetPort: 30000`. In Ray 2.55.1, `:30000–31000` is the replica's direct-ingress HTTP server, so this path bypasses HAProxy (which listens on the pod's `:8000`). See [docs/topology-and-request-path.md](../../docs/topology-and-request-path.md).
+
 ### 4. Execute the Concurrency Sweep (C in [1, 4, 8, 16, 32, 64])
 From a load generator pod in the same AWS availability zone (`us-east-1d`):
 ```bash

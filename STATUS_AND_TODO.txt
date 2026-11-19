@@ -1,7 +1,7 @@
 ================================================================================
 RAY SERVE MODEL SERVING BENCHMARK - STATUS & PENDING TODO
 Repository: ray-serve-model-serving-benchmark
-Last Updated: 2026-10-12
+Last Updated: 2026-11-18
 ================================================================================
 
 --------------------------------------------------------------------------------
@@ -74,11 +74,11 @@ PART 1: COMPLETED ACTIONS (WHAT WAS DONE)
 8. PHASE 2 STATISTICAL PIPELINE & DELTA BOOTSTRAP CI (MUST-FIX #2):
    - Implemented 'bootstrap_median_diff_ci' in 'results/analyze.py'.
    - Automatically computes 95% bootstrap confidence intervals for the pairwise delta
-     between Ray HAProxy and Direct Serving across trials:
+     between Ray direct ingress and Direct Serving across trials:
      * p50 Median Delta: +0.301 ms [Bootstrap 95% CI: +0.154 ms, +0.445 ms]
-     * p90 Delta:        +0.617 ms [Bootstrap 95% CI: +0.401 ms, +0.812 ms]
-     * p95 Delta:        +0.610 ms [Bootstrap 95% CI: +0.418 ms, +0.792 ms]
-     * p99 Delta:        +0.151 ms [Bootstrap 95% CI: +0.404 ms, +1.813 ms]
+     * p90 Delta:        +0.617 ms [Bootstrap 95% CI: +0.427 ms, +0.691 ms]
+     * p95 Delta:        +0.610 ms [Bootstrap 95% CI: +0.310 ms, +0.670 ms]
+     * p99 Delta:        +1.151 ms [Bootstrap 95% CI: +0.404 ms, +1.813 ms]
    - Re-running 'python3 results/analyze.py' now preserves and regenerates the delta
      column in 'results/summary_report.md' directly from 'results/raw_trials.json'.
    - Removed the redundant internal note mentioning '7,502' from 'docs/report.md'.
@@ -133,5 +133,46 @@ PART 2: PENDING ACTIONS (WHAT STILL NEEDS TO BE DONE)
    - Phase 4: LLM serving (vLLM + Ray Serve on multi-GPU).
    - Phase 5: Composite DAG pipelines (CPU XGBoost + GPU Embeddings).
    - Phase 6: Autoscaling economics (queue-based vs. HPA).
+
+
+--------------------------------------------------------------------------------
+PART 3: DOCUMENTATION CORRECTIONS & OPEN PROVENANCE (2026-11-18)
+--------------------------------------------------------------------------------
+
+1. PORT-ROLE / ARCHITECTURE LABEL CORRECTION (APPLIED):
+   - Verified against Ray 2.55.1 source that :8000 is the Serve HTTP ingress
+     (HAProxy when RAY_SERVE_ENABLE_HA_PROXY=1) and :30000-31000 are the
+     direct-ingress HTTP servers inside Serve replicas.
+   - The benchmark Service maps Service port 8000 -> targetPort 30000, so the
+     arm previously called "Worker HAProxy :30000" actually tests Ray Serve
+     direct ingress and bypasses HAProxy.
+   - Renamed to "Ray Serve Direct Ingress (:30000)" across README, docs, reports,
+     charts (SVG), analysis scripts, raw_trials labels, and manifest comments.
+     Measurement values are unchanged. Resource names retain "worker-haproxy"
+     for reproducibility.
+   - Added docs/topology-and-request-path.md with topology, port map, request
+     paths, source citations, and open items.
+
+2. TOPOLOGY DOCUMENTATION GAPS (DOCUMENTED, NOT YET FIXED BY A RE-RUN):
+   - Original node counts were not recorded. Manifests pin instance type + zone
+     only; no anti-affinity, so pods from different architectures could share
+     nodes.
+   - Phase 3 k6 driver instance type was not pinned; its historical node is
+     unknown. The Job manifest now pins c6i.2xlarge for future runs.
+   - Teardown record lists 1x g6.8xlarge + 2x g6.xlarge, while current manifests
+     specify g6.xlarge. The g6.8xlarge provenance is unresolved. Confirm from
+     AWS Cost Explorer / EC2 launch history before citing node counts.
+
+3. MEASUREMENT-BOUNDARY NOTE (DOCUMENTED):
+   - Direct server timers start before request body read; Ray timers start after.
+     Both reported totals exclude response serialization. Transit = client
+     duration - server total therefore carries a small boundary bias. Align
+     timers before publishing hop-by-hop transit numbers.
+
+4. PENDING FOR THE NEXT RUN:
+   - Add a true HAProxy arm (Service targetPort 8000) to separate HAProxy cost
+     from direct-ingress cost.
+   - Capture kubectl get nodes/pods/endpoints output with the raw results.
+   - Decide whether to enforce node isolation (anti-affinity / dedicated pool).
 
 ================================================================================

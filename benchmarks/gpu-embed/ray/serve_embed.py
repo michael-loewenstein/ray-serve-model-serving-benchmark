@@ -3,7 +3,8 @@
 Features:
 - SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2") on CUDA in FP16
 - Ray Serve native @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.005)
-- Worker HAProxy port 30000 fast-path routing
+- Direct-ingress fast path: the test Service targets the replica HTTP server on :30000
+  (Ray's HAProxy/Python ingress on :8000 is bypassed)
 - orjson serialization
 """
 
@@ -25,7 +26,7 @@ _METHOD_NOT_ALLOWED_RESP = Response(b'{"detail":"Method Not Allowed"}', status_c
 @serve.deployment(
     name="EmbeddingDeployment",
     ray_actor_options={"num_gpus": 1, "num_cpus": 2, "resources": {"worker_only": 1}},
-    max_ongoing_requests=100,
+    max_ongoing_requests=1000,
     autoscaling_config=None,
 )
 class EmbeddingDeployment:
@@ -57,7 +58,7 @@ class EmbeddingDeployment:
         pure_model_ms = (t1 - t0) * 1000.0
         return embeddings, pure_model_ms
 
-    @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.005)
+    @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.005, max_concurrent_batches=1)
     async def batched_encode(self, texts: List[str]):
         # Offload CPU tokenization and GPU kernel execution to a worker thread
         # so the Ray replica actor event loop is not blocked during computation.

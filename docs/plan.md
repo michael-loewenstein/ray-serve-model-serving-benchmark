@@ -3,7 +3,7 @@
 ## Open-Source Workload Specification & Official Ray Serve Evaluation Methodology
 
 **Target Infrastructure:** Kubernetes on AWS (EKS, `us-east-1`), namespace `model-serving-benchmark`  
-**Node Architecture:** Dedicated compute node pool on AWS `c6i.2xlarge` (Intel Xeon 8375C @ 2.90GHz, On-Demand), Karpenter node provisioning, Prometheus metrics pipeline  
+**Node Architecture:** Pinned compute node pool on AWS `c6i.2xlarge` (Intel Xeon 8375C @ 2.90GHz, On-Demand) in `us-east-1d`, Karpenter node provisioning, Prometheus metrics pipeline. Instance type and zone are pinned, but nodes are not dedicated and no anti-affinity is configured.  
 **Core Standard:** Zero proprietary dependencies; aligned with [Ray Serve Official Benchmarks](https://docs.ray.io/en/latest/serve/llm/benchmarks.html) and [`anyscale/ray-serve-llm-perf-examples`](https://github.com/anyscale/ray-serve-llm-perf-examples).
 
 ---
@@ -30,7 +30,8 @@ The objective of this benchmark is to determine whether Ray Serve's multi-model 
 │   (all-MiniLM-L6-v2)                   │       │   - XGBoost (CPU actor)                │
 │ • GPU LLM: Standalone vLLM Container   │       │   - all-MiniLM-L6-v2 (Dynamic Batching)│
 │   (vllm/vllm-openai:v0.6.3)            │       │   - Llama-3.1-8B (Ray Serve vLLM)      │
-│ • Ingress -> K8s Service -> Pod IP     │       │ • Ingress -> HAProxy (:30000) -> Actor │
+│ • Ingress -> K8s Service -> Pod IP     │       │ • Ingress -> :8000 proxy, or direct    │
+│                                        │       │   ingress :30000 -> replica             │
 └────────────────────────────────────────┘       └────────────────────────────────────────┘
 ```
 
@@ -47,7 +48,7 @@ The objective of this benchmark is to determine whether Ray Serve's multi-model 
 | Workload | Model Architecture | Hardware & Resource Envelope | Test Objective |
 |---|---|---|---|
 | **Workload 1:<br>CPU Tabular** | **XGBoost Classifier** (100 trees, depth 6)<br>50-dimensional float feature vector | `c6i.2xlarge` (On-Demand)<br>1 vCPU, 2 GiB RAM per replica | Serving overhead, JSON parsing efficiency (`orjson`), proxy hops. (Dynamic batching supported, not tested). |
-| **Workload 2:<br>GPU Embeddings** | **`sentence-transformers/all-MiniLM-L6-v2`**<br>(384-dim, FP16) | `g5.2xlarge` / `g6.2xlarge` (NVIDIA A10G / L4)<br>2 vCPU, 8 GiB RAM, 1 GPU | Dynamic micro-batching efficiency (`@serve.batch`), GPU utilization. |
+| **Workload 2:<br>GPU Embeddings** | **`sentence-transformers/all-MiniLM-L6-v2`**<br>(384-dim, FP16) | `g6.xlarge` (NVIDIA L4)<br>2 vCPU, 8 GiB RAM, 1 GPU | Dynamic micro-batching efficiency (`@serve.batch`), GPU utilization. |
 | **Workload 3:<br>GPU LLM** | **`meta-llama/Meta-Llama-3.1-8B-Instruct`**<br>vLLM v0.6.x (TP=1, AWQ/FP16) | `g5.2xlarge` / `g6.2xlarge`<br>6 vCPU, 28 GiB RAM, 1 GPU | TTFT, TPOT, Tokens/s (TPS), KV cache dynamics, scaling linearity. |
 | **Workload 4:<br>Mixed Multi-Model** | All 3 models deployed concurrently<br>(60% CPU / 25% Embed / 15% LLM) | Mixed CPU & GPU pools on Kubernetes | Cross-workload contention, tail latency amplification, goodput. |
 
