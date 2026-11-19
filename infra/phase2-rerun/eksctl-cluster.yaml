@@ -1,0 +1,55 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: ray-serve-phase2-rerun
+  region: us-west-2
+  version: "1.34"
+  tags:
+    project: ray-serve-benchmark
+    purpose: phase2-haproxy-rerun
+availabilityZones:
+  - us-west-2a
+  - us-west-2b
+vpc:
+  cidr: 10.42.0.0/16
+  nat:
+    gateway: Single
+iam:
+  withOIDC: true
+managedNodeGroups:
+  - name: head
+    instanceType: c6i.2xlarge
+    amiFamily: AmazonLinux2023
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    availabilityZones: ["us-west-2a"]
+    labels: {bench-role: head}
+    tags: {project: ray-serve-benchmark}
+  - name: worker-w1
+    instanceType: c6i.2xlarge
+    amiFamily: AmazonLinux2023
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    availabilityZones: ["us-west-2a"]
+    labels: {bench-role: worker, bench-slot: w1}
+    tags: {project: ray-serve-benchmark}
+  - name: worker-w2
+    instanceType: c6i.2xlarge
+    amiFamily: AmazonLinux2023
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    availabilityZones: ["us-west-2a"]
+    labels: {bench-role: worker, bench-slot: w2}
+    tags: {project: ray-serve-benchmark}
+  - name: loadgen
+    instanceType: c6i.2xlarge
+    amiFamily: AmazonLinux2023
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 1
+    availabilityZones: ["us-west-2a"]
+    labels: {bench-role: loadgen}
+    tags: {project: ray-serve-benchmark}

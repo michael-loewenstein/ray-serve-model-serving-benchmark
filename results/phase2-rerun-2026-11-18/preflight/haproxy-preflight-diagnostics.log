@@ -1,0 +1,100 @@
+===== [task-7 BLOCKED] diagnostics collected after gateway failure =====
+Wed Nov 18 22:29:12 UTC 2026
+
+--- pods -o wide ---
+NAME                                          READY   STATUS    RESTARTS   AGE   IP             NODE                                         NOMINATED NODE   READINESS GATES
+direct-serving-rerun-575c95656b-hjhlp         1/1     Running   0          16m   10.42.26.119   ip-10-42-25-210.us-west-2.compute.internal   <none>           <none>
+direct-serving-rerun-575c95656b-mws26         1/1     Running   0          16m   10.42.5.152    ip-10-42-6-1.us-west-2.compute.internal      <none>           <none>
+ray-haproxy-rerun-mw8jv-head-pxkrl            1/1     Running   0          16m   10.42.6.10     ip-10-42-15-175.us-west-2.compute.internal   <none>           <none>
+ray-haproxy-rerun-mw8jv-worker-worker-v9dbh   1/1     Running   0          16m   10.42.1.185    ip-10-42-25-210.us-west-2.compute.internal   <none>           <none>
+ray-haproxy-rerun-mw8jv-worker-worker-xnljn   0/1     Running   0          16m   10.42.15.90    ip-10-42-6-1.us-west-2.compute.internal      <none>           <none>
+
+--- endpoints ---
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+NAME                     ENDPOINTS                            AGE
+ray-haproxy-svc          10.42.1.185:8000                     16m
+ray-direct-ingress-svc   10.42.1.185:30000                    16m
+direct-serving-svc       10.42.26.119:8000,10.42.5.152:8000   16m
+
+--- ray list actors (HAProxyManager/ProxyActor) ---
+    ACTOR_ID                          CLASS_NAME                              STATE      JOB_ID  NAME                                                                                 NODE_ID                                                     PID  RAY_NAMESPACE
+ 0  0db6a27229e24d8b3c91595a01000000  HAProxyManager                          ALIVE    01000000  SERVE_PROXY_ACTOR-e76bac119305045e377676609cd937a9893d2e08c35c802aaf7ec35f           e76bac119305045e377676609cd937a9893d2e08c35c802aaf7ec35f    672  serve
+ 2  168933afe2a287dc7cbfb15501000000  ServeReplica:default:XGBoostDeployment  ALIVE    01000000  SERVE_REPLICA::default#XGBoostDeployment#13fysyyk                                    e52882346a254df214a4c01c20a2d4368b1ac8144fe1e13a66baaa8f    164  serve
+ 3  2d2c9fd44b57bdcee4e0c01c01000000  ServeReplica:default:XGBoostDeployment  ALIVE    01000000  SERVE_REPLICA::default#XGBoostDeployment#7phzlj07                                    e52882346a254df214a4c01c20a2d4368b1ac8144fe1e13a66baaa8f    165  serve
+ 4  6f22c7633ae13a6ca375255001000000  ProxyActor                              ALIVE    01000000  SERVE_PROXY_ACTOR-fallback-e76bac119305045e377676609cd937a9893d2e08c35c802aaf7ec35f  e76bac119305045e377676609cd937a9893d2e08c35c802aaf7ec35f    635  serve
+ 5  e94253a6954068a5cfcc69b601000000  HAProxyManager                          ALIVE    01000000  SERVE_PROXY_ACTOR-e52882346a254df214a4c01c20a2d4368b1ac8144fe1e13a66baaa8f           e52882346a254df214a4c01c20a2d4368b1ac8144fe1e13a66baaa8f    268  serve
+
+--- ray list nodes ---
+Total: 3
+ 0  d5afd163ad0d160efe6e25949ea7ba90f582b6c29fe379e2f10285a2  10.42.15.90  False           ALIVE                     10.42.15.90  CPU: 2.0                          ray.io/node-group: worker
+                                                                                                                                  node:10.42.15.90: 1.0
+ 1  e52882346a254df214a4c01c20a2d4368b1ac8144fe1e13a66baaa8f  10.42.1.185  False           ALIVE                     10.42.1.185  CPU: 2.0                          ray.io/node-group: worker
+                                                                                                                                  node:10.42.1.185: 1.0
+ 2  e76bac119305045e377676609cd937a9893d2e08c35c802aaf7ec35f  10.42.6.10   True            ALIVE                     10.42.6.10   memory: 3.000 GiB                 ray.io/node-group: headgroup
+                                                                                                                                  node:10.42.6.10: 1.0              ray.io/node-id: e76bac119305045e377676609cd937a9893d2e08c35c802aaf7ec35f
+
+--- Serve controller proxy-start events (head log) ---
+INFO 2026-11-18 14:13:31,302 controller 595 -- Starting proxy 'SERVE_PROXY_ACTOR-fallback-e76bac119305045e377676609cd937a9893d2e08c35c802aaf7ec35f' on node 'e76bac119305045e377676609cd937a9893d2e08c35c802aaf7ec35f' listening on '0.0.0.0:8500'.
+INFO 2026-11-18 14:13:31,326 controller 595 -- Starting proxy 'SERVE_PROXY_ACTOR-e76bac119305045e377676609cd937a9893d2e08c35c802aaf7ec35f' on node 'e76bac119305045e377676609cd937a9893d2e08c35c802aaf7ec35f' listening on '0.0.0.0:8000'.
+INFO 2026-11-18 14:13:59,924 controller 595 -- Starting proxy 'SERVE_PROXY_ACTOR-e52882346a254df214a4c01c20a2d4368b1ac8144fe1e13a66baaa8f' on node 'e52882346a254df214a4c01c20a2d4368b1ac8144fe1e13a66baaa8f' listening on '0.0.0.0:8000'.
+INFO 2026-11-18 14:14:00,134 controller 595 -- Allocated RequestProtocol.HTTP port 30000 to replica 7phzlj07 on node e52882346a254df214a4c01c20a2d4368b1ac8144fe1e13a66baaa8f
+INFO 2026-11-18 14:14:00,189 controller 595 -- Allocated RequestProtocol.HTTP port 30001 to replica 13fysyyk on node e52882346a254df214a4c01c20a2d4368b1ac8144fe1e13a66baaa8f
+
+--- Listener ports via /proc/net/tcp ---
+ray-haproxy-rerun-mw8jv-head-pxkrl: [6379, 8000, 8080, 8265, 8404, 8500, 9101, 10001, 10683, 12473, 15968, 19755, 39491, 41643, 43473, 44085, 44217, 44227, 52365]
+
+ray-haproxy-rerun-mw8jv-worker-worker-v9dbh: [8000, 8080, 8404, 9101, 12878, 15661, 18118, 30000, 30001, 35149, 36267, 37567, 41343, 41509, 44453, 52365]
+
+ray-haproxy-rerun-mw8jv-worker-worker-xnljn: [8080, 38893, 40965, 44063, 44933, 52365]
+
+
+--- haproxy binary presence ---
+pod: ray-haproxy-rerun-mw8jv-head-pxkrl
+    /home/ray/anaconda3/lib/python3.11/site-packages/ray_haproxy/bin/haproxy
+pod: ray-haproxy-rerun-mw8jv-worker-worker-v9dbh
+    /home/ray/anaconda3/lib/python3.11/site-packages/ray_haproxy/bin/haproxy
+pod: ray-haproxy-rerun-mw8jv-worker-worker-xnljn
+    /home/ray/anaconda3/lib/python3.11/site-packages/ray_haproxy/bin/haproxy
+
+===== [task-7 resume] recurrence diagnostics after recreate-once (cluster qg4hs) =====
+Wed Nov 18 22:46:58 UTC 2026
+
+--- pods -o wide ---
+NAME                                          READY   STATUS    RESTARTS   AGE   IP             NODE                                         NOMINATED NODE   READINESS GATES
+direct-serving-rerun-575c95656b-hjhlp         1/1     Running   0          34m   10.42.26.119   ip-10-42-25-210.us-west-2.compute.internal   <none>           <none>
+direct-serving-rerun-575c95656b-mws26         1/1     Running   0          34m   10.42.5.152    ip-10-42-6-1.us-west-2.compute.internal      <none>           <none>
+ray-haproxy-rerun-qg4hs-head-rwsrw            1/1     Running   0          12m   10.42.10.255   ip-10-42-15-175.us-west-2.compute.internal   <none>           <none>
+ray-haproxy-rerun-qg4hs-worker-worker-ddnkn   0/1     Running   0          12m   10.42.20.234   ip-10-42-25-210.us-west-2.compute.internal   <none>           <none>
+ray-haproxy-rerun-qg4hs-worker-worker-pfzkm   1/1     Running   0          12m   10.42.15.18    ip-10-42-6-1.us-west-2.compute.internal      <none>           <none>
+
+--- endpoints ---
+NAME                     ENDPOINTS                            AGE
+ray-haproxy-svc          10.42.15.18:8000                     12m
+ray-direct-ingress-svc   10.42.15.18:30000                    12m
+direct-serving-svc       10.42.26.119:8000,10.42.5.152:8000   34m
+
+--- actors ---
+    ACTOR_ID                          CLASS_NAME                              STATE      JOB_ID  NAME                                                                                 NODE_ID                                                     PID  RAY_NAMESPACE
+ 0  0fc4e0390ef90475cebeeb4601000000  ServeReplica:default:XGBoostDeployment  ALIVE    01000000  SERVE_REPLICA::default#XGBoostDeployment#m7ck2z42                                    bd1f9ecb13a8255ab08150ef942e34db92dca5c0cde88ea68072582a    172  serve
+ 1  1f94a5381feb229368cde31001000000  HAProxyManager                          ALIVE    01000000  SERVE_PROXY_ACTOR-bd1f9ecb13a8255ab08150ef942e34db92dca5c0cde88ea68072582a           bd1f9ecb13a8255ab08150ef942e34db92dca5c0cde88ea68072582a    276  serve
+ 3  a30c55460cb97b75ac6db78d01000000  ServeReplica:default:XGBoostDeployment  ALIVE    01000000  SERVE_REPLICA::default#XGBoostDeployment#7i0h2q5a                                    bd1f9ecb13a8255ab08150ef942e34db92dca5c0cde88ea68072582a    173  serve
+ 4  b65d8049362e82a7444cbd7c01000000  HAProxyManager                          ALIVE    01000000  SERVE_PROXY_ACTOR-0d56f482d6293d100e4ed67c5a305237ece4eb35294b0c53b6d420d2           0d56f482d6293d100e4ed67c5a305237ece4eb35294b0c53b6d420d2    673  serve
+ 5  cbf0afc22c6ff2a7a5b4497f01000000  ProxyActor                              ALIVE    01000000  SERVE_PROXY_ACTOR-fallback-0d56f482d6293d100e4ed67c5a305237ece4eb35294b0c53b6d420d2  0d56f482d6293d100e4ed67c5a305237ece4eb35294b0c53b6d420d2    637  serve
+
+--- GCS node registrations ---
+[2026-11-18 14:34:39,566 I 8 29] (gcs_server) gcs_node_manager.cc:111: Registering new node. node_id=0d56f482d6293d100e4ed67c5a305237ece4eb35294b0c53b6d420d2 node_name=10.42.10.255 node_address=10.42.10.255
+[2026-11-18 14:34:45,959 I 8 29] (gcs_server) gcs_node_manager.cc:111: Registering new node. node_id=bd1f9ecb13a8255ab08150ef942e34db92dca5c0cde88ea68072582a node_name=10.42.15.18 node_address=10.42.15.18
+[2026-11-18 14:35:06,439 I 8 29] (gcs_server) gcs_node_manager.cc:111: Registering new node. node_id=5c7d9b5180c16184e5e76fb6055ccba70da0ce4f455753e4f31e1062 node_name=10.42.20.234 node_address=10.42.20.234
+
+--- controller proxy-start and port-allocation events ---
+/tmp/ray/session_latest/logs/serve/controller_597.log:INFO 2026-11-18 14:34:47,140 controller 597 -- Starting proxy 'SERVE_PROXY_ACTOR-fallback-0d56f482d6293d100e4ed67c5a305237ece4eb35294b0c53b6d420d2' on node '0d56f482d6293d100e4ed67c5a305237ece4eb35294b0c53b6d420d2' listening on '0.0.0.0:8500'.
+/tmp/ray/session_latest/logs/serve/controller_597.log:INFO 2026-11-18 14:34:47,161 controller 597 -- Starting proxy 'SERVE_PROXY_ACTOR-0d56f482d6293d100e4ed67c5a305237ece4eb35294b0c53b6d420d2' on node '0d56f482d6293d100e4ed67c5a305237ece4eb35294b0c53b6d420d2' listening on '0.0.0.0:8000'.
+/tmp/ray/session_latest/logs/serve/controller_597.log:INFO 2026-11-18 14:35:17,996 controller 597 -- Starting proxy 'SERVE_PROXY_ACTOR-bd1f9ecb13a8255ab08150ef942e34db92dca5c0cde88ea68072582a' on node 'bd1f9ecb13a8255ab08150ef942e34db92dca5c0cde88ea68072582a' listening on '0.0.0.0:8000'.
+/tmp/ray/session_latest/logs/serve/controller_597.log:INFO 2026-11-18 14:35:18,263 controller 597 -- Allocated RequestProtocol.HTTP port 30000 to replica 7i0h2q5a on node bd1f9ecb13a8255ab08150ef942e34db92dca5c0cde88ea68072582a
+/tmp/ray/session_latest/logs/serve/controller_597.log:INFO 2026-11-18 14:35:18,265 controller 597 -- Allocated RequestProtocol.HTTP port 30001 to replica m7ck2z42 on node bd1f9ecb13a8255ab08150ef942e34db92dca5c0cde88ea68072582a
+
+--- listener ports via /proc/net/tcp ---
+ray-haproxy-rerun-qg4hs-worker-worker-pfzkm: [8000, 8080, 8404, 9101, 15011, 18336, 18337, 30000, 30001, 33407, 43411, 44189, 44903, 44987, 45773, 52365]
+
+ray-haproxy-rerun-qg4hs-worker-worker-ddnkn: [8080, 33033, 39083, 40739, 41769, 52365]
+

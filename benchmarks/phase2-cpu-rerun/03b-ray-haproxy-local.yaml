@@ -1,0 +1,227 @@
+# Block 3 control: single-replica HAProxy RayService pinned to worker slot w1.
+# Same HAProxy/direct-ingress paths as 03-ray-haproxy.yaml, but one worker on the
+# bench-slot=w1 node and Serve num_replicas=1. Both Services select only that pod.
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: ray-haproxy-local-rerun
+  namespace: model-serving-benchmark
+  labels:
+    app.kubernetes.io/name: ray-haproxy-local-rerun
+    bench-arm: local
+    benchmark.arch: ray-haproxy-local
+spec:
+  serviceUnhealthySecondThreshold: 300
+  rayClusterConfig:
+    rayVersion: "2.60.0"
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+        num-cpus: "0"
+        node-ip-address: "$MY_POD_IP"
+        metrics-export-port: "8080"
+      template:
+        metadata:
+          labels:
+            app: ray-head-rerun
+            bench-role: head
+            bench-arm: local
+            benchmark.arch: ray-haproxy-local
+        spec:
+          nodeSelector:
+            bench-role: head
+          containers:
+            - name: ray-head
+              image: rayproject/ray:2.60.0-py311
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: MY_POD_IP
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.podIP
+                - name: PYTHONPATH
+                  value: "/opt/ray_serve_app"
+                - name: OMP_NUM_THREADS
+                  value: "1"
+                - name: MODEL_PATH
+                  value: "/models/model.json"
+                - name: RAY_SERVE_THROUGHPUT_OPTIMIZED
+                  value: "1"
+                - name: RAY_SERVE_ENABLE_HA_PROXY
+                  value: "1"
+              resources:
+                requests:
+                  cpu: "1"
+                  memory: "3Gi"
+                limits:
+                  cpu: "1"
+                  memory: "3Gi"
+              ports:
+                - containerPort: 6379
+                  name: gcs
+                - containerPort: 8265
+                  name: dashboard
+                - containerPort: 8000
+                  name: serve
+                - containerPort: 8080
+                  name: metrics
+              volumeMounts:
+                - name: ray-serve-code
+                  mountPath: /opt/ray_serve_app/ray_serve_app.py
+                  subPath: ray_serve_app.py
+                - name: benchmark-model-artifact
+                  mountPath: /models
+          volumes:
+            - name: ray-serve-code
+              configMap:
+                name: ray-serve-code
+            - name: benchmark-model-artifact
+              configMap:
+                name: benchmark-model-artifact
+    workerGroupSpecs:
+      - groupName: worker
+        replicas: 1
+        minReplicas: 1
+        maxReplicas: 1
+        rayStartParams:
+          num-cpus: "1"
+          node-ip-address: "$MY_POD_IP"
+        template:
+          metadata:
+            labels:
+              app: ray-worker-rerun
+              bench-role: worker
+              bench-slot: w1
+              bench-arm: local
+              benchmark.arch: ray-haproxy-local
+          spec:
+            nodeSelector:
+              bench-role: worker
+              bench-slot: w1
+            affinity:
+              podAntiAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - labelSelector:
+                      matchLabels:
+                        ray.io/node-type: worker
+                    topologyKey: kubernetes.io/hostname
+            containers:
+              - name: ray-worker
+                image: rayproject/ray:2.60.0-py311
+                imagePullPolicy: IfNotPresent
+                env:
+                  - name: MY_POD_IP
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: status.podIP
+                  - name: PYTHONPATH
+                    value: "/opt/ray_serve_app"
+                  - name: OMP_NUM_THREADS
+                    value: "1"
+                  - name: MODEL_PATH
+                    value: "/models/model.json"
+                  - name: RAY_SERVE_THROUGHPUT_OPTIMIZED
+                    value: "1"
+                  - name: RAY_SERVE_ENABLE_HA_PROXY
+                    value: "1"
+                resources:
+                  requests:
+                    cpu: "2"
+                    memory: "4Gi"
+                  limits:
+                    cpu: "2"
+                    memory: "4Gi"
+                ports:
+                  - containerPort: 8000
+                    name: http
+                  - containerPort: 8080
+                    name: metrics
+                readinessProbe:
+                  exec:
+                    command:
+                      - python3
+                      - -c
+                      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readiness')
+                  initialDelaySeconds: 30
+                  periodSeconds: 5
+                  failureThreshold: 20
+                volumeMounts:
+                  - name: ray-serve-code
+                    mountPath: /opt/ray_serve_app/ray_serve_app.py
+                    subPath: ray_serve_app.py
+                  - name: benchmark-model-artifact
+                    mountPath: /models
+            volumes:
+              - name: ray-serve-code
+                configMap:
+                  name: ray-serve-code
+              - name: benchmark-model-artifact
+                configMap:
+                  name: benchmark-model-artifact
+  serveConfigV2: |
+    proxy_location: EveryNode
+    http_options:
+      host: "0.0.0.0"
+      port: 8000
+    applications:
+      - name: default
+        route_prefix: /
+        import_path: ray_serve_app:app
+        runtime_env:
+          env_vars:
+            PYTHONPATH: "/opt/ray_serve_app"
+            OMP_NUM_THREADS: "1"
+            MODEL_PATH: "/models/model.json"
+            RAY_SERVE_THROUGHPUT_OPTIMIZED: "1"
+            RAY_SERVE_ENABLE_HA_PROXY: "1"
+          pip:
+            - "xgboost==2.1.1"
+            - "orjson==3.9.0"
+        deployments:
+          - name: XGBoostDeployment
+            num_replicas: 1
+            max_ongoing_requests: 1000
+            ray_actor_options:
+              num_cpus: 1.0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-haproxy-w1-svc
+  namespace: model-serving-benchmark
+  labels:
+    app.kubernetes.io/name: ray-haproxy-local-rerun
+    bench-arm: local
+    benchmark.arch: ray-haproxy-local
+spec:
+  selector:
+    ray.io/node-type: worker
+    bench-arm: local
+    bench-slot: w1
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-direct-w1-svc
+  namespace: model-serving-benchmark
+  labels:
+    app.kubernetes.io/name: ray-haproxy-local-rerun
+    bench-arm: local
+    benchmark.arch: ray-direct-local
+spec:
+  selector:
+    ray.io/node-type: worker
+    bench-arm: local
+    bench-slot: w1
+  ports:
+    - name: http-direct
+      port: 8000
+      targetPort: 30000
+      protocol: TCP
+  type: ClusterIP

@@ -1,0 +1,9 @@
+{
+  "source": "aws eks list-clusters --region us-west-2 --output json, captured after teardown (2026-11-19T01:27:42Z)",
+  "redacted_on": "2026-11-19",
+  "redaction_note": "Cluster names belong to unrelated clusters in a shared AWS account and were replaced by a count and a hash. Equal hashes between the before/after files mean identical cluster sets.",
+  "count": 25,
+  "sha256_of_sorted_names": "bac66a0368aafa02a89b833095b53c6b5cc71da1ee92cf76e174763246cd15b4",
+  "sha256_method": "sha256 over the UTF-8 bytes of the cluster names sorted ascending and joined with '\\n' (no trailing newline)",
+  "contains_ray_serve_phase2_rerun": false
+}

@@ -7,10 +7,13 @@ Features:
 - Captures offered, completed, successful, and failed requests (Goodput).
 - Decomposes server execution time from network transit latency.
 - Emits raw trial data in the exact JSON schema consumed by results/analyze.py.
+- Records each trial's seed, UTC start time, and whether k6 thresholds were breached.
+- Re-exports the raw files after every recorded trial so an abort keeps completed trials.
 """
 
 import argparse
 import csv
+import datetime
 import json
 import math
 import os
@@ -18,33 +21,73 @@ import random
 import subprocess
 import sys
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_K6_SCRIPT = os.path.join(SCRIPT_DIR, "k6_benchmark.js")
 DEFAULT_OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "results", "matrix_runs")
-DEFAULT_RAW_JSON = os.path.join(SCRIPT_DIR, "..", "results", "raw_trials.json")
-DEFAULT_RAW_CSV = os.path.join(SCRIPT_DIR, "..", "results", "raw_trials.csv")
+
+# k6 exits with this code when a threshold in k6_benchmark.js is crossed. The
+# run itself completed and its summary is valid, so the trial is recorded and
+# flagged rather than discarded.
+K6_THRESHOLD_EXIT_CODE = 99
 
 TARGETS = {
     "direct": {
         "name": "Direct Serving (Uvicorn)",
-        "url": os.environ.get("DIRECT_URL", "http://direct-serving-svc:8000"),
+        "url": "http://direct-serving-svc:8000",
     },
     "ray_python": {
         "name": "Ray Serve (Default Python Proxy :8000)",
-        "url": os.environ.get("RAY_PYTHON_URL", "http://ray-serve-python-proxy-serve-svc:8000"),
+        "url": "http://ray-python-proxy-svc:8000",
     },
-    # Historical key/URL names: the target Service maps port 8000 -> targetPort 30000,
-    # which is Ray Serve direct ingress, not HAProxy. See docs/topology-and-request-path.md.
     "ray_haproxy": {
+        "name": "Ray Serve (HAProxy :8000)",
+        "url": "http://ray-haproxy-svc:8000",
+    },
+    "ray_direct": {
         "name": "Ray Serve (Direct Ingress :30000)",
-        "url": os.environ.get("RAY_HAPROXY_URL", "http://ray-serve-worker-haproxy-svc:8000"),
+        "url": "http://ray-direct-ingress-svc:8000",
+    },
+    "ray_haproxy_local": {
+        "name": "Ray Serve (HAProxy local control)",
+        "url": "http://ray-haproxy-w1-svc:8000",
+    },
+    "ray_direct_local": {
+        "name": "Ray Serve (Direct Ingress local control)",
+        "url": "http://ray-direct-w1-svc:8000",
     },
 }
 
+BLOCKS = {
+    "block1": ["direct", "ray_haproxy", "ray_direct"],
+    "block2": ["direct", "ray_python"],
+    "block3": ["ray_haproxy_local", "ray_direct_local"],
+}
 
-def parse_k6_json(json_path: str, target_key: str, profile: str, trial_num: int) -> Dict[str, Any]:
+
+def resolve_targets(block: str, override: Optional[str] = None) -> List[str]:
+    """Return the target keys for a block, optionally narrowed to a comma-separated override."""
+    if block not in BLOCKS:
+        raise ValueError(f"Unknown block: {block!r}. Expected one of {sorted(BLOCKS)}")
+    allowed = BLOCKS[block]
+    if override is None:
+        return list(allowed)
+
+    selected = [name.strip() for name in override.split(",")]
+    for name in selected:
+        if name not in allowed:
+            raise ValueError(f"Target {name!r} is not part of {block}; choose from {allowed}")
+    return selected
+
+
+def parse_k6_json(
+    json_path: str,
+    target_key: str,
+    profile: str,
+    trial_num: int,
+    block: str = "legacy",
+) -> Dict[str, Any]:
     if not os.path.exists(json_path):
         return {}
     with open(json_path, "r", encoding="utf-8") as f:
@@ -116,6 +159,7 @@ def parse_k6_json(json_path: str, target_key: str, profile: str, trial_num: int)
         "pure_booster_predict_p50_ms": round(model_ms, 3),
         "server_total_p50_ms": round(server_tot_ms, 3),
         "network_transit_p50_ms": round(net_ms, 3),
+        "block": block,
     }
 
 
@@ -127,6 +171,8 @@ def run_k6_trial(
     output_json: str,
     trial_num: int,
     k6_script_path: str = DEFAULT_K6_SCRIPT,
+    block: str = "legacy",
+    seed: Optional[int] = None,
 ) -> Dict[str, Any]:
     cmd = [
         "k6", "run",
@@ -139,8 +185,22 @@ def run_k6_trial(
         k6_script_path,
     ]
     print(f"\n[EXEC] Running {target_key} ({rate_rps} RPS, {duration})...")
-    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    return parse_k6_json(output_json, target_key, f"{rate_rps}rps", trial_num)
+    started_at_utc = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds")
+    completed = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    threshold_breached = completed.returncode == K6_THRESHOLD_EXIT_CODE
+    if completed.returncode not in (0, K6_THRESHOLD_EXIT_CODE):
+        print(completed.stdout)
+        raise RuntimeError(
+            f"k6 exited with code {completed.returncode} for {target_key} ({duration})"
+        )
+    if threshold_breached:
+        print(f"[WARN] k6 thresholds crossed for {target_key} ({duration}); recording trial with threshold_breached=true")
+    result = parse_k6_json(output_json, target_key, f"{rate_rps}rps", trial_num, block)
+    if result:
+        result["threshold_breached"] = threshold_breached
+        result["seed"] = seed
+        result["started_at_utc"] = started_at_utc
+    return result
 
 
 def export_raw_trials_schema(
@@ -150,26 +210,55 @@ def export_raw_trials_schema(
     rate_rps: int,
     duration: str,
     trials_per_arch: int,
+    append: bool = False,
+    az: str = "us-west-2a",
 ) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(output_json)), exist_ok=True)
     os.makedirs(os.path.dirname(os.path.abspath(output_csv)), exist_ok=True)
 
+    merged_trials: List[Dict[str, Any]] = list(all_trials)
+    if append and os.path.exists(output_json):
+        with open(output_json, "r", encoding="utf-8") as f:
+            existing_payload = json.load(f)
+        merged_trials = list(existing_payload.get("trials", [])) + merged_trials
+
+    # Deduplicate by (block, target_key, trial_number); a newer run replaces an
+    # earlier result for the same slot so reruns are idempotent.
+    trials_by_key: Dict[Tuple[str, str, Any], Dict[str, Any]] = {}
+    for trial in merged_trials:
+        key = (
+            trial.get("block", "legacy"),
+            trial.get("target_key", ""),
+            trial.get("trial_number"),
+        )
+        trials_by_key[key] = trial
+    sorted_trials = [trials_by_key[key] for key in sorted(trials_by_key)]
+
+    # Note: this counts distinct trial numbers per block, i.e. runs per arm per
+    # block, not total trial records in the block.
+    trial_numbers_by_block: Dict[str, set] = {}
+    for trial in sorted_trials:
+        trial_numbers_by_block.setdefault(trial.get("block", "legacy"), set()).add(
+            trial.get("trial_number")
+        )
+    trials_per_block = {
+        block: len(numbers) for block, numbers in trial_numbers_by_block.items()
+    }
+
     metadata = {
         "workload": "Open-Source CPU XGBoost Binary Classifier (50 numeric features, 100 trees, depth 6)",
         "hardware": "AWS c6i.2xlarge On-Demand (Intel Xeon 8375C @ 2.90GHz)",
-        "co_location": "Single Availability Zone (us-east-1d), zero cross-AZ transit",
+        "co_location": f"Single Availability Zone ({az}), zero cross-AZ transit",
         "replicas_per_architecture": 2,
         "cpu_per_replica": 1.0,
         "memory_per_replica": "2 GiB",
         "omp_num_threads": 1,
         "target_arrival_rate_rps": float(rate_rps),
         "measured_stage_duration_seconds": 30.0,
-        "total_trials": len(all_trials),
+        "total_trials": len(sorted_trials),
         "trials_per_architecture": trials_per_arch,
+        "trials_per_block": trials_per_block,
     }
-
-    # Sort deterministically by architecture and trial number
-    sorted_trials = sorted(all_trials, key=lambda t: (t["architecture"], t["trial_number"]))
 
     payload = {
         "benchmark_metadata": metadata,
@@ -181,10 +270,11 @@ def export_raw_trials_schema(
     print(f"[OK] Exported raw JSON results in analyze.py schema to: {output_json}")
 
     fieldnames = [
-        "architecture", "target_key", "trial_number", "total_requests",
+        "architecture", "target_key", "block", "trial_number", "total_requests",
         "successful_requests", "failed_requests", "goodput_rps",
         "p50_ms", "p90_ms", "p95_ms", "p99_ms", "max_ms",
         "pure_booster_predict_p50_ms", "server_total_p50_ms", "network_transit_p50_ms",
+        "threshold_breached", "seed", "started_at_utc",
     ]
     with open(output_csv, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -196,60 +286,105 @@ def export_raw_trials_schema(
 
 def main():
     parser = argparse.ArgumentParser(description="Run randomized matrix benchmark across serving architectures.")
+    parser.add_argument("--block", required=True, choices=list(BLOCKS.keys()), help="Benchmark block to run")
+    parser.add_argument("--targets", default=None, help="Comma-separated subset of the block's target keys")
     parser.add_argument("--trials", type=int, default=5, help="Number of independent trials per architecture")
     parser.add_argument("--rate-rps", type=int, default=50, help="Target constant arrival rate in req/s")
     parser.add_argument("--duration", default="30s", help="Duration per test trial")
+    parser.add_argument("--az", default="us-west-2a", help="Availability zone the cluster runs in (recorded in benchmark metadata)")
+    parser.add_argument("--warmup-duration", default="15s", help="Unrecorded warmup duration per target before trials")
+    parser.add_argument("--append", action="store_true", help="Merge these trials into an existing raw results file")
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Directory for individual trial JSON files")
-    parser.add_argument("--output-raw-json", default=DEFAULT_RAW_JSON, help="Path for aggregated raw_trials.json")
-    parser.add_argument("--output-raw-csv", default=DEFAULT_RAW_CSV, help="Path for aggregated raw_trials.csv")
+    # Required: there is no default so a run can never overwrite a historical
+    # dataset (e.g. the October results/raw_trials.{json,csv}).
+    parser.add_argument("--output-raw-json", required=True, help="Path for aggregated raw_trials.json")
+    parser.add_argument("--output-raw-csv", required=True, help="Path for aggregated raw_trials.csv")
     parser.add_argument("--k6-script", default=DEFAULT_K6_SCRIPT, help="Path to k6 script")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for trial execution order")
     args = parser.parse_args()
 
+    try:
+        target_keys = resolve_targets(args.block, args.targets)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     os.makedirs(args.output_dir, exist_ok=True)
     random.seed(args.seed)
 
+    # Warmup pass: run once per target; results are not recorded as trials.
+    try:
+        for target_key in target_keys:
+            target_info = TARGETS[target_key]
+            warmup_file = os.path.join(args.output_dir, f"warmup_{target_key}.json")
+            run_k6_trial(
+                target_key,
+                target_info["url"],
+                args.rate_rps,
+                args.warmup_duration,
+                warmup_file,
+                0,
+                args.k6_script,
+                block=args.block,
+                seed=args.seed,
+            )
+            print(f"--> Warmup complete for {target_info['name']}")
+    except RuntimeError as exc:
+        print(f"[ERROR] Warmup failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+
     trial_queue = []
-    for target_key in TARGETS.keys():
+    for target_key in target_keys:
         for i in range(args.trials):
             trial_queue.append((target_key, i + 1))
     random.shuffle(trial_queue)
 
     print(f"================================================================")
-    print(f" Matrix Benchmark: {len(trial_queue)} Total Randomized Trials")
+    print(f" Matrix Benchmark ({args.block}): {len(trial_queue)} Total Randomized Trials")
     print(f" Rate: {args.rate_rps} req/s | Duration: {args.duration} per trial")
+    print(f" Targets: {[TARGETS[t[0]]['name'] for t in trial_queue[:len(target_keys)]]}")
     print(f" Random Order: {[t[0] + '#' + str(t[1]) for t in trial_queue]}")
     print(f"================================================================")
 
     all_trials: List[Dict[str, Any]] = []
 
-    for step, (target_key, trial_num) in enumerate(trial_queue, 1):
-        target_info = TARGETS[target_key]
-        json_file = os.path.join(args.output_dir, f"{target_key}_trial_{trial_num}.json")
-        print(f"\n[{step}/{len(trial_queue)}] Starting Trial #{trial_num} for {target_info['name']}...")
-        trial_res = run_k6_trial(
-            target_key,
-            target_info["url"],
-            args.rate_rps,
-            args.duration,
-            json_file,
-            trial_num,
-            args.k6_script,
-        )
-        if trial_res:
-            all_trials.append(trial_res)
-            print(f"--> Result: p50={trial_res.get('p50_ms')}ms, p95={trial_res.get('p95_ms')}ms, Goodput={trial_res.get('goodput_rps')} req/s")
-        time.sleep(3)
+    try:
+        for step, (target_key, trial_num) in enumerate(trial_queue, 1):
+            target_info = TARGETS[target_key]
+            json_file = os.path.join(args.output_dir, f"{target_key}_trial_{trial_num}.json")
+            print(f"\n[{step}/{len(trial_queue)}] Starting Trial #{trial_num} for {target_info['name']}...")
+            trial_res = run_k6_trial(
+                target_key,
+                target_info["url"],
+                args.rate_rps,
+                args.duration,
+                json_file,
+                trial_num,
+                args.k6_script,
+                block=args.block,
+                seed=args.seed,
+            )
+            if trial_res:
+                all_trials.append(trial_res)
+                print(f"--> Result: p50={trial_res.get('p50_ms')}ms, p95={trial_res.get('p95_ms')}ms, Goodput={trial_res.get('goodput_rps')} req/s")
+                # Export after every recorded trial (same merge/dedupe semantics as a
+                # single end-of-block export) so an abort never discards completed trials.
+                export_raw_trials_schema(
+                    all_trials,
+                    args.output_raw_json,
+                    args.output_raw_csv,
+                    args.rate_rps,
+                    args.duration,
+                    args.trials,
+                    append=args.append,
+                    az=args.az,
+                )
+            time.sleep(3)
+    except RuntimeError as exc:
+        print(f"[ERROR] Trial failed: {exc}", file=sys.stderr)
+        if all_trials:
+            print(f"[INFO] {len(all_trials)} completed trial(s) already exported to {args.output_raw_json}", file=sys.stderr)
+        sys.exit(1)
 
-    if all_trials:
-        export_raw_trials_schema(
-            all_trials,
-            args.output_raw_json,
-            args.output_raw_csv,
-            args.rate_rps,
-            args.duration,
-            args.trials,
-        )
     print("\nBenchmark matrix run complete.")
 
 

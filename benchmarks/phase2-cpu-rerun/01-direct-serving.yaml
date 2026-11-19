@@ -1,0 +1,106 @@
+# Architecture A: Direct model serving baseline for the Phase 2 HAProxy rerun.
+# Native Kubernetes Deployment (FastAPI + Uvicorn + orjson + XGBoost) pinned to
+# the two bench-role=worker nodes, one pod per node via required anti-affinity.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: direct-serving-rerun
+  namespace: model-serving-benchmark
+  labels:
+    app: direct-serving-rerun
+    bench-arm: direct
+    benchmark.arch: direct
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: direct-serving-rerun
+  template:
+    metadata:
+      labels:
+        app: direct-serving-rerun
+        bench-role: worker
+        bench-arm: direct
+        benchmark.arch: direct
+    spec:
+      nodeSelector:
+        bench-role: worker
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: direct-serving-rerun
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: server
+          image: python:3.11-slim
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              apt-get update -qq && apt-get install -y --no-install-recommends libgomp1 > /dev/null 2>&1
+              pip install --quiet --no-cache-dir "xgboost==2.1.1" "fastapi==0.110.0" "uvicorn[standard]==0.28.0" "orjson==3.9.0"
+              exec uvicorn direct_app:app --host "0.0.0.0" --port 8000 --workers 1 --no-access-log
+          workingDir: /app
+          env:
+            - name: OMP_NUM_THREADS
+              value: "1"
+            - name: MODEL_PATH
+              value: "/models/model.json"
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          volumeMounts:
+            - name: direct-serving-code
+              mountPath: /app/direct_app.py
+              subPath: direct_app.py
+            - name: benchmark-model-artifact
+              mountPath: /models
+      volumes:
+        - name: direct-serving-code
+          configMap:
+            name: direct-serving-code
+        - name: benchmark-model-artifact
+          configMap:
+            name: benchmark-model-artifact
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: direct-serving-svc
+  namespace: model-serving-benchmark
+  labels:
+    app: direct-serving-rerun
+    bench-arm: direct
+    benchmark.arch: direct
+spec:
+  selector:
+    app: direct-serving-rerun
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP

@@ -3,8 +3,9 @@
 Optimized with:
 - Direct Starlette Request/Response (bypassing FastAPI router overhead)
 - orjson parsing and serialization
-- Direct-ingress routing support via the replica HTTP server on port 30000
-  (HAProxy/Python ingress on port 8000 is bypassed by the benchmark Service)
+- Serves both Ray ingress paths: port 8000 (HAProxy, or the default Python
+  proxy) and the replica's direct-ingress HTTP server on port 30000; the
+  2026-11-18 rerun measures both, each through its own Service
 - Custom latency histograms for server and model execution
 """
 
@@ -24,7 +25,7 @@ _METHOD_NOT_ALLOWED_RESP = Response(b'{"detail":"Method Not Allowed"}', status_c
 @serve.deployment(
     name="XGBoostDeployment",
     ray_actor_options={"num_cpus": 1.0},
-    max_ongoing_requests=50,
+    max_ongoing_requests=1000,
 )
 class XGBoostDeployment:
     def __init__(self) -> None:
@@ -42,7 +43,7 @@ class XGBoostDeployment:
         _boundaries = [0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0]
         self._total_latency_ms = Histogram(
             "ray_xgboost_request_latency_ms",
-            description="End-to-end /infer latency in ms (parse + model + serialization)",
+            description="Replica /infer latency in ms (body read + parse + model + serialization)",
             boundaries=_boundaries,
         )
         self._model_latency_ms = Histogram(
@@ -52,6 +53,7 @@ class XGBoostDeployment:
         )
 
     async def __call__(self, request: Request) -> Response:
+        t0 = time.perf_counter()
         path = request.url.path
         method = request.method
 
@@ -62,13 +64,12 @@ class XGBoostDeployment:
 
         if path == "/infer":
             if method == "POST":
-                return await self._handle_infer(await request.body())
+                return await self._handle_infer(t0, await request.body())
             return _METHOD_NOT_ALLOWED_RESP
 
         return _NOT_FOUND_RESP
 
-    async def _handle_infer(self, raw: bytes) -> Response:
-        t0 = time.perf_counter()
+    async def _handle_infer(self, t0: float, raw: bytes) -> Response:
         try:
             payload = orjson.loads(raw)
         except Exception as exc:

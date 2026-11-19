@@ -10,6 +10,8 @@ This directory contains clean, production-grade Kubernetes manifests for evaluat
 
 > **Port roles (Ray 2.55.1):** `:8000` is the Ray Serve HTTP ingress — HAProxy when `RAY_SERVE_ENABLE_HA_PROXY=1`, otherwise the Python proxy. `:30000–31000` are the direct-ingress HTTP servers inside Serve replicas. Architecture C's Service maps `8000 → targetPort 30000`, so it **bypasses HAProxy**. Full request paths: [docs/topology-and-request-path.md](../docs/topology-and-request-path.md).
 
+> **Phase 2 rerun (2026-11-18) and reproducing October:** these manifests describe the October 2026 Phase 2 setup. The rerun, which measures HAProxy on `:8000` and direct ingress on `:30000` on Ray 2.60.0, uses its own manifests and preflight in [`benchmarks/phase2-cpu-rerun/`](../benchmarks/phase2-cpu-rerun/). To reproduce the October setup exactly, check out commit `8e0e906`: the shared `app/ray_serve_app.py` has since changed (its server timer now starts before the request body is read), so the current file does not match what October measured.
+
 ---
 
 ## Prerequisites

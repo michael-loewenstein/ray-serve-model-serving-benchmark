@@ -1,0 +1,95 @@
+2026-11-18 23:47:19 [ℹ]  deleting EKS cluster "ray-serve-phase2-rerun"
+2026-11-18 23:47:20 [ℹ]  will drain 0 unmanaged nodegroup(s) in cluster "ray-serve-phase2-rerun"
+2026-11-18 23:47:20 [ℹ]  starting parallel draining, max in-flight of 1
+2026-11-18 23:47:20 [ℹ]  deleted 0 Fargate profile(s)
+2026-11-18 23:47:21 [ℹ]  cleaning up AWS load balancers created by Kubernetes objects of Kind Service, Ingress, or Gateway
+2026-11-18 23:47:23 [ℹ]  
+4 sequential tasks: { 
+    4 parallel sub-tasks: { 
+        delete nodegroup "head",
+        delete nodegroup "worker-w2",
+        delete nodegroup "loadgen",
+        delete nodegroup "worker-w1",
+    }, delete IAM OIDC provider, delete addon IAM "eksctl-ray-serve-phase2-rerun-addon-vpc-cni", delete cluster control plane "ray-serve-phase2-rerun" 
+}
+2026-11-18 23:47:23 [ℹ]  will delete stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 23:47:23 [ℹ]  waiting for stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1" to get deleted
+2026-11-18 23:47:23 [ℹ]  will delete stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 23:47:23 [ℹ]  waiting for stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2" to get deleted
+2026-11-18 23:47:23 [ℹ]  will delete stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen"
+2026-11-18 23:47:23 [ℹ]  waiting for stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen" to get deleted
+2026-11-18 23:47:23 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 23:47:23 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 23:47:23 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen"
+2026-11-18 23:47:23 [ℹ]  will delete stack "eksctl-ray-serve-phase2-rerun-nodegroup-head"
+2026-11-18 23:47:23 [ℹ]  waiting for stack "eksctl-ray-serve-phase2-rerun-nodegroup-head" to get deleted
+2026-11-18 23:47:23 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-head"
+2026-11-18 23:47:53 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 23:47:53 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 23:47:53 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen"
+2026-11-18 23:47:53 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-head"
+2026-11-18 23:48:26 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 23:48:32 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen"
+2026-11-18 23:48:38 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-head"
+2026-11-18 23:48:39 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 23:49:11 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 23:49:52 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 23:50:11 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-head"
+2026-11-18 23:50:19 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-loadgen"
+2026-11-18 23:50:33 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+2026-11-18 23:50:47 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1"
+2026-11-18 23:51:07 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2"
+=== RESUMED TEARDOWN (second run, 2026-11-19T01:21:09Z) ===
+2026-11-19 01:21:09 [ℹ]  deleting EKS cluster "ray-serve-phase2-rerun"
+2026-11-19 01:21:10 [ℹ]  deleted 0 Fargate profile(s)
+2026-11-19 01:21:11 [ℹ]  cleaning up AWS load balancers created by Kubernetes objects of Kind Service, Ingress, or Gateway
+2026-11-19 01:21:12 [ℹ]  
+3 sequential tasks: { delete IAM OIDC provider, delete addon IAM "eksctl-ray-serve-phase2-rerun-addon-vpc-cni", delete cluster control plane "ray-serve-phase2-rerun" 
+}
+2026-11-19 01:21:13 [ℹ]  will delete stack "eksctl-ray-serve-phase2-rerun-addon-vpc-cni"
+2026-11-19 01:21:13 [ℹ]  waiting for stack "eksctl-ray-serve-phase2-rerun-addon-vpc-cni" to get deleted
+2026-11-19 01:21:13 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-addon-vpc-cni"
+2026-11-19 01:21:43 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-addon-vpc-cni"
+2026-11-19 01:21:43 [ℹ]  will delete stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-19 01:21:43 [ℹ]  waiting for stack "eksctl-ray-serve-phase2-rerun-cluster" to get deleted
+2026-11-19 01:21:43 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-19 01:22:13 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-19 01:23:11 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-19 01:25:04 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase2-rerun-cluster"
+2026-11-19 01:25:04 [✔]  all cluster resources were deleted
+=== LEFTOVER CHECKS (2026-11-19T01:25:28Z) ===
+--- eks list-clusters ---
+ray-serve-phase2-rerun present: False
+before count 26 after count 25
+removed: ['ray-serve-phase2-rerun'] added: []
+--- ec2 instances tagged project=ray-serve-benchmark (pending/running/stopping/stopped) ---
+[]
+--- NAT gateways tagged project=ray-serve-benchmark (available,pending) ---
+[]
+--- NAT gateway nat-0e8f1e65f90830079 state ---
+nat-0e8f1e65f90830079	deleted
+--- EBS volumes tagged kubernetes.io/cluster/ray-serve-phase2-rerun=owned ---
+[]
+--- available EBS volumes with tag key kubernetes.io/cluster/ray-serve-phase2-rerun ---
+[]
+--- CFN stacks eksctl-ray-serve-phase2-rerun-* (list-stacks, all statuses) ---
+eksctl-ray-serve-phase2-rerun-nodegroup-head	DELETE_COMPLETE
+eksctl-ray-serve-phase2-rerun-nodegroup-worker-w2	DELETE_COMPLETE
+eksctl-ray-serve-phase2-rerun-nodegroup-loadgen	DELETE_COMPLETE
+eksctl-ray-serve-phase2-rerun-nodegroup-worker-w1	DELETE_COMPLETE
+eksctl-ray-serve-phase2-rerun-addon-vpc-cni	DELETE_COMPLETE
+eksctl-ray-serve-phase2-rerun-cluster	DELETE_COMPLETE
+--- CFN non-deleted stacks matching name (describe-stacks) ---
+[]
+--- kubeconfig ---
+removed ~/.kube/ray-serve-phase2-rerun (contained only ray-serve-phase2-rerun cluster/user/context entries)
+ls: cannot access '/home/ubuntu/.kube/ray-serve-phase2-rerun': No such file or directory
+
+=== POST-TEARDOWN CLUSTER LIST COMPARISON (2026-11-19T01:27:42Z) ===
+note: the earlier 'before count 26' above used a baseline captured mid-teardown (it still contained ray-serve-phase2-rerun). The authoritative before-creation baseline is results/phase2-rerun-2026-11-18/preflight/us-west-2-clusters-before.json (25 clusters); comparison below uses it.
+$ aws eks list-clusters --region us-west-2 --profile <aws-profile> --output json > results/phase2-rerun-2026-11-18/preflight/us-west-2-clusters-after-teardown.json
+before-creation count: 25
+after-teardown count: 25
+identical: True
+symmetric difference: []
+=== REDACTION NOTE (2026-11-19) === An earlier failed leftover-check block (zsh quoting error) was removed from this log before its first commit. On 2026-11-19 the AWS profile name above was redacted to <aws-profile>, and us-west-2-clusters-before.json / us-west-2-clusters-after-teardown.json were replaced by redacted summaries (count + sha256 of sorted names; equal hashes = identical sets).

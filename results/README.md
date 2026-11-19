@@ -1,6 +1,6 @@
 # Benchmark Results & Statistical Reconstruction
 
-This directory contains the complete raw experimental dataset and analysis code for the Phase 2 benchmark.
+This directory contains the raw experimental datasets and analysis code for the Phase 2 benchmark. The files directly in this directory are the **historical October 2026 run**. The current Phase 2 rerun (2026-11-18) lives in [`phase2-rerun-2026-11-18/`](phase2-rerun-2026-11-18/) and is reported in [`phase2-rerun-2026-11-18-report.md`](phase2-rerun-2026-11-18-report.md).
 
 ## Files
 
@@ -11,13 +11,17 @@ This directory contains the complete raw experimental dataset and analysis code 
 
 ## Running the Analysis
 
-```bash
-# From repository root:
-python results/analyze.py
+`analyze.py` requires explicit `--data` and `--output` paths; there are no defaults, so a bare run cannot overwrite a historical summary.
 
-# Or from this directory:
-cd results && python analyze.py
+Current dataset, the Phase 2 rerun (2026-11-18). Run from the repository root:
+
+```bash
+python3 results/analyze.py \
+  --data results/phase2-rerun-2026-11-18/raw_trials.json \
+  --output results/phase2-rerun-2026-11-18/summary_report.md
 ```
+
+The October 2026 dataset in this directory (`raw_trials.json`, `raw_trials.csv`, `summary_report.md`) is historical. Leave it unchanged. If you need to regenerate its summary, pass its paths explicitly (`--data results/raw_trials.json --output <path>`). Write to a scratch path rather than over `results/summary_report.md`, because the current `analyze.py` header and formatting differ from the version that produced the committed file.
 
 ## Label Correction (2026-11-18)
 

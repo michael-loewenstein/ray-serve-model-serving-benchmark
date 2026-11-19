@@ -1,0 +1,32 @@
+architecture,target_key,block,trial_number,total_requests,successful_requests,failed_requests,goodput_rps,p50_ms,p90_ms,p95_ms,p99_ms,max_ms,pure_booster_predict_p50_ms,server_total_p50_ms,network_transit_p50_ms
+Direct Serving (Uvicorn),direct,block1,1,1501,1501,0,50.03,1.074,1.275,1.334,1.5,17.19,0.463,0.481,0.553
+Direct Serving (Uvicorn),direct,block1,2,1501,1501,0,50.03,1.169,1.312,1.367,1.503,2.28,0.609,0.635,0.555
+Direct Serving (Uvicorn),direct,block1,3,1500,1500,0,50.0,1.129,1.287,1.322,1.478,2.24,0.535,0.556,0.556
+Direct Serving (Uvicorn),direct,block1,4,1500,1500,0,50.0,0.98,1.267,1.314,1.445,2.55,0.396,0.411,0.554
+Direct Serving (Uvicorn),direct,block1,5,1500,1500,0,50.0,1.072,1.281,1.316,1.429,2.43,0.469,0.487,0.553
+Ray Serve (Direct Ingress :30000),ray_direct,block1,1,1501,1501,0,50.03,1.255,1.375,1.418,1.641,2.25,0.525,0.568,0.691
+Ray Serve (Direct Ingress :30000),ray_direct,block1,2,1500,1500,0,50.0,1.212,1.363,1.408,1.563,2.09,0.501,0.542,0.675
+Ray Serve (Direct Ingress :30000),ray_direct,block1,3,1500,1500,0,50.0,1.237,1.386,1.441,1.615,2.74,0.518,0.561,0.681
+Ray Serve (Direct Ingress :30000),ray_direct,block1,4,1501,1501,0,50.03,1.2,1.381,1.423,1.608,1.97,0.449,0.484,0.68
+Ray Serve (Direct Ingress :30000),ray_direct,block1,5,1501,1501,0,50.03,1.153,1.369,1.419,1.616,6.94,0.41,0.441,0.671
+Ray Serve (HAProxy :8000),ray_haproxy,block1,1,1500,1500,0,50.0,1.388,1.799,1.845,2.028,2.78,0.517,0.56,0.876
+Ray Serve (HAProxy :8000),ray_haproxy,block1,2,1500,1500,0,50.0,1.383,1.789,1.838,1.969,2.81,0.512,0.555,0.872
+Ray Serve (HAProxy :8000),ray_haproxy,block1,3,1501,1501,0,50.03,1.395,1.829,1.886,2.084,2.55,0.509,0.551,0.885
+Ray Serve (HAProxy :8000),ray_haproxy,block1,4,1501,1501,0,50.03,1.411,1.839,1.884,2.052,2.7,0.521,0.563,0.887
+Ray Serve (HAProxy :8000),ray_haproxy,block1,5,1501,1501,0,50.03,1.388,1.785,1.838,1.976,2.57,0.514,0.556,0.877
+Direct Serving (Uvicorn),direct,block2,1,1501,1501,0,50.03,1.19,1.341,1.39,1.6,2.1,0.615,0.641,0.562
+Direct Serving (Uvicorn),direct,block2,2,1501,1501,0,50.03,1.138,1.292,1.33,1.524,2.05,0.576,0.599,0.555
+Direct Serving (Uvicorn),direct,block2,3,1501,1501,0,50.03,1.133,1.284,1.332,1.523,1.9,0.573,0.596,0.557
+Direct Serving (Uvicorn),direct,block2,4,1500,1500,0,50.0,1.175,1.315,1.369,1.644,2.15,0.605,0.63,0.562
+Direct Serving (Uvicorn),direct,block2,5,1501,1501,0,50.03,0.989,1.296,1.342,1.579,2.22,0.41,0.426,0.547
+Ray Serve (Default Python Proxy :8000),ray_python,block2,1,1500,1500,0,50.0,5.043,5.723,5.876,6.233,8.8,0.515,2.001,3.044
+Ray Serve (Default Python Proxy :8000),ray_python,block2,2,1501,1501,0,50.03,5.116,5.558,5.752,6.063,8.5,0.531,2.003,3.098
+Ray Serve (Default Python Proxy :8000),ray_python,block2,3,1500,1500,0,50.0,4.107,5.527,5.663,5.975,8.38,0.41,1.679,2.424
+Ray Serve (Default Python Proxy :8000),ray_python,block2,4,1501,1501,0,50.03,4.655,5.588,5.717,6.055,8.13,0.494,1.904,2.774
+Ray Serve (Default Python Proxy :8000),ray_python,block2,5,1501,1501,0,50.03,4.592,5.7,5.87,6.357,9.99,0.49,1.892,2.737
+Ray Serve (Direct Ingress local control),ray_direct_local,block3,1,1501,1501,0,50.03,1.276,1.398,1.501,1.779,2.52,0.534,0.578,0.694
+Ray Serve (Direct Ingress local control),ray_direct_local,block3,2,1501,1501,0,50.03,1.256,1.366,1.447,1.723,2.4,0.53,0.573,0.681
+Ray Serve (Direct Ingress local control),ray_direct_local,block3,3,1500,1500,0,50.0,1.271,1.397,1.477,1.8,2.8,0.534,0.577,0.691
+Ray Serve (HAProxy local control),ray_haproxy_local,block3,1,1501,1501,0,50.03,1.412,1.526,1.589,1.847,2.36,0.533,0.578,0.829
+Ray Serve (HAProxy local control),ray_haproxy_local,block3,2,1501,1501,0,50.03,1.394,1.512,1.57,1.767,2.48,0.528,0.572,0.815
+Ray Serve (HAProxy local control),ray_haproxy_local,block3,3,1500,1500,0,50.0,1.415,1.531,1.594,1.81,3.24,0.539,0.583,0.83
