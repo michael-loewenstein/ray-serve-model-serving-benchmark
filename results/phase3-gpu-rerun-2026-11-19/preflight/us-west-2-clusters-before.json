@@ -1,0 +1,29 @@
+{
+    "clusters": [
+        "anyscale-eks-bhuang-test-mps",
+        "autoscale-blog-cluster",
+        "aws-bench",
+        "bryce-test-cors-register-eks",
+        "dev-dataplane-eks-1-28",
+        "dev-dataplane-eks-yunikorn-1-28",
+        "dwai-eks-cluster",
+        "e2e-cluster",
+        "gang-eks-tf",
+        "janet-register-eks",
+        "kuberay-gpu-cluster",
+        "nfer-1",
+        "nfer-2",
+        "nfer-3",
+        "nfer-trial",
+        "nrg-eks-test",
+        "qm-poc",
+        "sanket-eks",
+        "shardtest-k8s-usw2-a",
+        "shardtest-k8s-usw2-b",
+        "sridhar-multiaz-test-eks",
+        "staging-dataplane-eks-min-version",
+        "svl-fleet-1",
+        "test-eks-bottlerocket",
+        "unique-folk-sculpture"
+    ]
+}

@@ -1,0 +1,148 @@
+2026-11-19 08:16:21 [ℹ]  deleting EKS cluster "ray-serve-phase3-rerun"
+2026-11-19 08:16:21 [ℹ]  will drain 0 unmanaged nodegroup(s) in cluster "ray-serve-phase3-rerun"
+2026-11-19 08:16:21 [ℹ]  starting parallel draining, max in-flight of 1
+2026-11-19 08:16:22 [ℹ]  deleted 0 Fargate profile(s)
+2026-11-19 08:16:22 [✔]  kubeconfig has been updated
+2026-11-19 08:16:22 [ℹ]  cleaning up AWS load balancers created by Kubernetes objects of Kind Service, Ingress, or Gateway
+2026-11-19 08:16:24 [ℹ]  
+4 sequential tasks: { 
+    4 parallel sub-tasks: { 
+        delete nodegroup "gpu-w2",
+        delete nodegroup "loadgen",
+        delete nodegroup "gpu-w1",
+        delete nodegroup "head",
+    }, delete IAM OIDC provider, delete addon IAM "eksctl-ray-serve-phase3-rerun-addon-vpc-cni", delete cluster control plane "ray-serve-phase3-rerun" 
+}
+2026-11-19 08:16:25 [ℹ]  will delete stack "eksctl-ray-serve-phase3-rerun-nodegroup-head"
+2026-11-19 08:16:25 [ℹ]  waiting for stack "eksctl-ray-serve-phase3-rerun-nodegroup-head" to get deleted
+2026-11-19 08:16:25 [ℹ]  will delete stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1"
+2026-11-19 08:16:25 [ℹ]  waiting for stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1" to get deleted
+2026-11-19 08:16:25 [ℹ]  will delete stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:16:25 [ℹ]  waiting for stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2" to get deleted
+2026-11-19 08:16:25 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-head"
+2026-11-19 08:16:25 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1"
+2026-11-19 08:16:25 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:16:25 [ℹ]  will delete stack "eksctl-ray-serve-phase3-rerun-nodegroup-loadgen"
+2026-11-19 08:16:25 [ℹ]  waiting for stack "eksctl-ray-serve-phase3-rerun-nodegroup-loadgen" to get deleted
+2026-11-19 08:16:25 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-loadgen"
+2026-11-19 08:16:55 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-head"
+2026-11-19 08:16:55 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1"
+2026-11-19 08:16:55 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:16:55 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-loadgen"
+2026-11-19 08:17:26 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-head"
+2026-11-19 08:17:39 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-loadgen"
+2026-11-19 08:17:46 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1"
+2026-11-19 08:17:50 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:18:31 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:18:55 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-loadgen"
+2026-11-19 08:19:10 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:19:13 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-head"
+2026-11-19 08:19:23 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1"
+2026-11-19 08:20:15 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:20:28 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-head"
+2026-11-19 08:20:49 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1"
+2026-11-19 08:20:53 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-loadgen"
+2026-11-19 08:21:18 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:21:24 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-head"
+2026-11-19 08:21:31 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1"
+2026-11-19 08:21:47 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-loadgen"
+2026-11-19 08:22:58 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:23:09 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1"
+2026-11-19 08:23:16 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-loadgen"
+2026-11-19 08:24:07 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:24:43 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1"
+2026-11-19 08:24:56 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-loadgen"
+2026-11-19 08:25:28 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:25:42 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-loadgen"
+2026-11-19 08:26:18 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1"
+2026-11-19 08:26:50 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w2"
+2026-11-19 08:27:48 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-nodegroup-gpu-w1"
+2026-11-19 08:27:49 [ℹ]  will delete stack "eksctl-ray-serve-phase3-rerun-addon-vpc-cni"
+2026-11-19 08:27:49 [ℹ]  waiting for stack "eksctl-ray-serve-phase3-rerun-addon-vpc-cni" to get deleted
+2026-11-19 08:27:49 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-addon-vpc-cni"
+2026-11-19 08:28:19 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-addon-vpc-cni"
+2026-11-19 08:28:19 [ℹ]  will delete stack "eksctl-ray-serve-phase3-rerun-cluster"
+2026-11-19 08:28:19 [ℹ]  waiting for stack "eksctl-ray-serve-phase3-rerun-cluster" to get deleted
+2026-11-19 08:28:19 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-cluster"
+2026-11-19 08:28:49 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-cluster"
+2026-11-19 08:29:29 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-cluster"
+2026-11-19 08:30:44 [ℹ]  waiting for CloudFormation stack "eksctl-ray-serve-phase3-rerun-cluster"
+2026-11-19 08:30:45 [✔]  all cluster resources were deleted
+
+=== Leak sweep 2026-11-19T08:30:57Z ===
+--- $ aws eks list-clusters --region us-west-2 (saved to us-west-2-clusters-after.json) ---
+{
+    "clusters": [
+        "anyscale-eks-bhuang-test-mps",
+        "autoscale-blog-cluster",
+        "aws-bench",
+        "bryce-test-cors-register-eks",
+        "dev-dataplane-eks-1-28",
+        "dev-dataplane-eks-yunikorn-1-28",
+        "dwai-eks-cluster",
+        "e2e-cluster",
+        "gang-eks-tf",
+        "janet-register-eks",
+        "kuberay-gpu-cluster",
+        "nfer-1",
+        "nfer-2",
+        "nfer-3",
+        "nfer-trial",
+        "nrg-eks-test",
+        "qm-poc",
+        "sanket-eks",
+        "shardtest-k8s-usw2-a",
+        "shardtest-k8s-usw2-b",
+        "sridhar-multiaz-test-eks",
+        "staging-dataplane-eks-min-version",
+        "svl-fleet-1",
+        "test-eks-bottlerocket",
+        "unique-folk-sculpture"
+    ]
+}
+
+--- target cluster absent check ---
+OK: ray-serve-phase3-rerun absent from cluster list
+--- $ aws ec2 describe-instances (tag project=ray-serve-benchmark) ---
+i-00fdfc9bead4c3494	terminated	g6.xlarge
+i-0a897735f72315adb	terminated	c6i.2xlarge
+i-057c01a6bb9127e78	terminated	c6i.2xlarge
+i-09fefe7fec3209dc6	terminated	g6.xlarge
+[instances-end]
+--- $ aws ec2 describe-nat-gateways (tag project=ray-serve-benchmark) ---
+nat-062f621889fb53294	deleted
+[nat-end]
+--- $ aws ec2 describe-volumes (tag project=ray-serve-benchmark) ---
+[volumes-end]
+--- $ aws cloudformation list-stacks (eksctl-ray-serve-phase3-rerun-*) ---
+[stacks-end]
+--- terminated instances: cluster tag / launch-time detail ---
+[
+    [
+        "i-00fdfc9bead4c3494",
+        "2026-11-19T06:25:28+00:00",
+        []
+    ],
+    [
+        "i-0a897735f72315adb",
+        "2026-11-19T06:25:30+00:00",
+        []
+    ],
+    [
+        "i-057c01a6bb9127e78",
+        "2026-11-19T06:25:28+00:00",
+        []
+    ],
+    [
+        "i-09fefe7fec3209dc6",
+        "2026-11-19T06:25:28+00:00",
+        []
+    ]
+]
+--- $ rm ~/.kube/ray-serve-phase3-rerun ---
+removed '/home/ubuntu/.kube/ray-serve-phase3-rerun'
+--- set-equality: before vs after cluster lists ---
+before count: 25 after count: 25
+equal sets: True
+only-before: []
+only-after: []

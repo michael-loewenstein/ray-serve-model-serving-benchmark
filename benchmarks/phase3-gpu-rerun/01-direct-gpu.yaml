@@ -1,0 +1,93 @@
+# Direct GPU embedding baseline for the Phase 3 GPU rerun.
+# Native Kubernetes Deployment (FastAPI + Uvicorn + orjson + SentenceTransformer
+# in FP16 on CUDA with an async micro-batching queue, max_batch_size=32,
+# batch_wait_timeout=5 ms). Pinned to the single bench-slot=gpu1 node; the
+# bench-slot label already implies the g6.xlarge (L4) instance type, so no
+# instance-type or zone selectors are repeated here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: direct-gpu-embed
+  namespace: model-serving-benchmark
+  labels:
+    app: direct-gpu-embed
+    bench-arm: direct
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: direct-gpu-embed
+  template:
+    metadata:
+      labels:
+        app: direct-gpu-embed
+        bench-arm: direct
+    spec:
+      nodeSelector:
+        bench-slot: gpu1
+      containers:
+        - name: server
+          image: pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
+          imagePullPolicy: IfNotPresent
+          command:
+            - bash
+            - -c
+            - |
+              pip install --quiet --no-cache-dir "transformers>=4.40.0,<4.49.0" "sentence-transformers>=2.5.0,<3.5.0" accelerate fastapi "uvicorn[standard]" orjson
+              # Bind 0.0.0.0, not "::": the kubelet readiness probe and the
+              # ClusterIP Service path both use IPv4, and with today's
+              # unpinned uvicorn[standard] a "::" bind is IPv6-only (verified:
+              # ::1 connects, 127.0.0.1 refused), so the pod never goes Ready.
+              exec uvicorn app:app --host "0.0.0.0" --port 8000 --workers 1 --no-access-log
+          workingDir: /app
+          env:
+            - name: MODEL_NAME
+              value: "sentence-transformers/all-MiniLM-L6-v2"
+            - name: MAX_BATCH_SIZE
+              value: "32"
+            - name: BATCH_WAIT_TIMEOUT_S
+              value: "0.005"
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: 8000
+            initialDelaySeconds: 240
+            periodSeconds: 5
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "8Gi"
+              nvidia.com/gpu: 1
+            limits:
+              cpu: "4000m"
+              memory: "12Gi"
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - name: app-code
+              mountPath: /app
+      volumes:
+        - name: app-code
+          configMap:
+            name: direct-gpu-embed-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: direct-gpu-embed-svc
+  namespace: model-serving-benchmark
+  labels:
+    app: direct-gpu-embed
+    bench-arm: direct
+spec:
+  selector:
+    app: direct-gpu-embed
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP

@@ -1,0 +1,200 @@
+# Ray Serve GPU embedding arm for the Phase 3 GPU rerun, with HAProxy in the
+# measured path on Ray 2.60.0.
+# Request path: client -> ray-ha-svc (:8000) -> HAProxy on the bench-slot=gpu2
+# node's ray-gpu-worker container (:8000) -> Serve replica (:300xx direct
+# ingress). The head HAProxy is present (proxy_location: EveryNode) but is not
+# a Service endpoint (ray-ha-svc selects ray.io/node-type=worker pods only).
+# The single replica is pinned to the gpu2 worker via the "worker_only" custom
+# resource, so it NEVER runs on the head node. No 8000->30000 Service exists.
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: rayservice-gpu-embed
+  namespace: model-serving-benchmark
+  labels:
+    app.kubernetes.io/name: rayservice-gpu-embed
+    bench-arm: ray
+spec:
+  serviceUnhealthySecondThreshold: 300
+  rayClusterConfig:
+    rayVersion: "2.60.0"
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+        num-cpus: "0"
+        node-ip-address: "$MY_POD_IP"
+        metrics-export-port: "8080"
+      template:
+        metadata:
+          labels:
+            app: ray-head-gpu-embed
+            bench-role: head
+            bench-arm: ray
+        spec:
+          nodeSelector:
+            bench-role: head
+          containers:
+            - name: ray-head
+              image: rayproject/ray:2.60.0-py311
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: MY_POD_IP
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.podIP
+                - name: RAY_SERVE_ENABLE_HA_PROXY
+                  value: "1"
+                - name: RAY_SERVE_THROUGHPUT_OPTIMIZED
+                  value: "1"
+                - name: RAY_SERVE_RUN_USER_CODE_IN_SEPARATE_THREAD
+                  value: "0"
+              resources:
+                requests:
+                  cpu: "1"
+                  memory: "3Gi"
+                limits:
+                  cpu: "2"
+                  memory: "5Gi"
+              ports:
+                - containerPort: 6379
+                  name: gcs
+                - containerPort: 8265
+                  name: dashboard
+                - containerPort: 8000
+                  name: serve
+                - containerPort: 8080
+                  name: metrics
+              volumeMounts:
+                - name: app-code
+                  mountPath: /home/ray/serve_embed.py
+                  subPath: serve_embed.py
+          volumes:
+            - name: app-code
+              configMap:
+                name: ray-gpu-embed-code
+    workerGroupSpecs:
+      - groupName: gpu-worker
+        replicas: 1
+        minReplicas: 1
+        maxReplicas: 1
+        rayStartParams:
+          num-cpus: "2"
+          num-gpus: "1"
+          # KubeRay interpolates rayStartParams verbatim into the pod's
+          # `bash -c "ray start ..."` command, so a value containing bare
+          # double quotes loses them to shell parsing and ray rejects
+          # `--resources={worker_only:1}` as invalid JSON. Ship the single
+          # quotes inside the string so bash passes the JSON through intact.
+          resources: '''{"worker_only":1}'''
+          node-ip-address: "$MY_POD_IP"
+          metrics-export-port: "8080"
+        template:
+          metadata:
+            labels:
+              ray.io/node-type: worker
+              bench-arm: ray
+          spec:
+            nodeSelector:
+              bench-slot: gpu2
+            containers:
+              - name: ray-gpu-worker
+                image: rayproject/ray:2.60.0-py311-gpu
+                imagePullPolicy: IfNotPresent
+                env:
+                  - name: MY_POD_IP
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: status.podIP
+                  - name: RAY_SERVE_ENABLE_HA_PROXY
+                    value: "1"
+                  - name: RAY_SERVE_THROUGHPUT_OPTIMIZED
+                    value: "1"
+                  - name: RAY_SERVE_RUN_USER_CODE_IN_SEPARATE_THREAD
+                    value: "0"
+                ports:
+                  - containerPort: 8000
+                    name: http-ha
+                  - containerPort: 8080
+                    name: metrics
+                readinessProbe:
+                  exec:
+                    command:
+                      - python3
+                      - -c
+                      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readiness')
+                  initialDelaySeconds: 300
+                  periodSeconds: 5
+                  timeoutSeconds: 3
+                  failureThreshold: 60
+                resources:
+                  requests:
+                    cpu: "2000m"
+                    memory: "8Gi"
+                    nvidia.com/gpu: 1
+                  limits:
+                    cpu: "4000m"
+                    memory: "12Gi"
+                    nvidia.com/gpu: 1
+                volumeMounts:
+                  - name: app-code
+                    mountPath: /home/ray/serve_embed.py
+                    subPath: serve_embed.py
+            volumes:
+              - name: app-code
+                configMap:
+                  name: ray-gpu-embed-code
+  # serveConfigV2 is a literal string handed to Ray, so explanatory comments
+  # live HERE (outside the block), not inside it. The runtime_env pip set pins
+  # numpy<2: torch 2.2.0 was compiled against numpy 1.x, and with the numpy
+  # 2.x that pip otherwise resolves (live-observed: 2.1.3) every
+  # sentence-transformers encode fails with "RuntimeError: Numpy is not
+  # available" at emb.numpy(), so every /embed returns HTTP 500. The direct
+  # arm works because the pytorch:2.2.0 image ships numpy 1.26.3.
+  serveConfigV2: |
+    proxy_location: EveryNode
+    http_options:
+      host: "::"
+      port: 8000
+    applications:
+      - name: default
+        route_prefix: /
+        import_path: serve_embed:app
+        runtime_env:
+          env_vars:
+            RAY_SERVE_ENABLE_HA_PROXY: "1"
+            RAY_SERVE_THROUGHPUT_OPTIMIZED: "1"
+            RAY_SERVE_RUN_USER_CODE_IN_SEPARATE_THREAD: "0"
+          pip:
+            - "torch==2.2.0"
+            - "numpy<2"
+            - "transformers>=4.40.0,<4.49.0"
+            - "sentence-transformers>=2.5.0,<3.5.0"
+            - "accelerate"
+            - "orjson>=3.9.0"
+        deployments:
+          - name: EmbeddingDeployment
+            num_replicas: 1
+            max_ongoing_requests: 1000
+            ray_actor_options:
+              num_gpus: 1
+              num_cpus: 2
+              resources: {"worker_only": 1}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-ha-svc
+  namespace: model-serving-benchmark
+  labels:
+    app.kubernetes.io/name: rayservice-gpu-embed
+    bench-arm: ray
+spec:
+  selector:
+    ray.io/node-type: worker
+    bench-arm: ray
+  ports:
+    - name: http-ha
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: ClusterIP

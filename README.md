@@ -5,10 +5,8 @@
 > **TL;DR Executive Summary:**
 > - **Workloads Evaluated:** CPU Tabular Inference (`xgboost`) and Lightweight GPU Embeddings (`all-MiniLM-L6-v2` FP16 on NVIDIA L4).
 > - **CPU Routing Overhead (Phase 2, Ray 2.60.0, 31 trials, 0 failures):** against block-matched FastAPI/Uvicorn baselines, Ray Serve's HAProxy ingress on `:8000` (verified live in the request path) adds +0.314 ms p50 / +0.550 ms p99, and direct ingress on `:30000` adds +0.138 ms p50 / +0.137 ms p99. Both pass the absolute <= 3.0 ms gate. The default Python proxy adds +3.517 ms p50 / +4.484 ms p99 and fails it. No Ray arm passes the 10% relative gate at a ~1.1 ms baseline. See the [Phase 2 Report](results/phase2-rerun-2026-11-18-report.md).
-> - **GPU Dynamic Micro-Batching:** Dynamic batching on NVIDIA L4 scales throughput 19.5x to 24.2x over single-request execution.
-> - **Baseline Hardening:** Serving event loops decoupled via `asyncio.to_thread`; manifests pinned to `torch==2.2.0` on `g6.xlarge` instances (instance type and zone pinned, but not node-isolated).
-> - **Phase 3 Baseline Status (In Progress):** Preliminary exploratory single-run snapshot reported; multi-trial matrix re-measurement pending with warmups and bootstrap CIs.
-> - **Key Reports:** [Phase 2 CPU Rerun Report](results/phase2-rerun-2026-11-18-report.md) | [Phase 2 Statistical Summary](results/phase2-rerun-2026-11-18/summary_report.md) | [Phase 3 GPU Embeddings Report](results/phase3-gpu-embeddings-report.md).
+> - **GPU Micro-Batching (Phase 3, Ray 2.60.0, 60 trials, 0 failures):** Ray Serve behind its HAProxy ingress (`:8000`) vs a FastAPI/asyncio batching baseline, one NVIDIA L4 each, C=1–64. **Low-load latency PASS** (+0.344 ms p95 at C=1, +0.874 ms at C=4). **C=64 saturation PASS**: Ray Serve p99 70.050 ms vs Direct 132.829 ms. **Goodput FAIL** (≥ 95% only at C=1, 66.16% at C=32). **Batch scaling FAIL** (×15.63 throughput, but p95 33.890 ms at C=32 against a 20 ms ceiling). See the [Phase 3 Report](results/phase3-gpu-rerun-2026-11-19-report.md).
+> - **Key Reports:** [Phase 2 CPU Rerun Report](results/phase2-rerun-2026-11-18-report.md) | [Phase 2 Statistical Summary](results/phase2-rerun-2026-11-18/summary_report.md) | [Phase 3 GPU Rerun Report](results/phase3-gpu-rerun-2026-11-19-report.md) | [Phase 3 Statistical Summary](results/phase3-gpu-rerun-2026-11-19/summary.md).
 [![Ray](https://img.shields.io/badge/Ray-2.60.0-blue.svg)](https://docs.ray.io/)
 [![KubeRay](https://img.shields.io/badge/KubeRay-v1.7.2-blue.svg)](https://ray-project.github.io/kuberay-helm/)
 [![k6](https://img.shields.io/badge/k6-v0.54.0-purple.svg)](https://k6.io/)
@@ -31,13 +29,12 @@ A rigorous, open-source performance benchmark evaluating the proxy, queueing, an
   - [4. Per-Arm Summary & Transit](#4-per-arm-summary--transit)
   - [5. Attributing the HAProxy Arm](#5-attributing-the-haproxy-arm)
   - [6. Limitations & Disclosures](#6-limitations--disclosures)
-- [Phase 3: GPU Embeddings Benchmark (Sentence-Transformers on NVIDIA L4) (In Progress)](#phase-3-gpu-embeddings-benchmark-sentence-transformers-on-nvidia-l4-in-progress)
-  - [1. Setup & Hardware Parity](#1-setup--hardware-parity)
-  - [2. Concurrency Sweep Results Matrix](#2-concurrency-sweep-results-matrix)
-  - [3. Visual Performance Curves](#3-visual-performance-curves)
-  - [4. Plain Headline Findings](#4-plain-headline-findings-stated-plainly-no-spin)
-  - [5. Honesty & Reproducibility Disclosures](#5-honesty--reproducibility-disclosures)
-  - [6. Pending Actions & TODOs](#6-pending-actions--todos)
+- [Phase 3: GPU Embeddings Benchmark (Sentence-Transformers on NVIDIA L4)](#phase-3-gpu-embeddings-benchmark-sentence-transformers-on-nvidia-l4)
+  - [1. Setup & Gate Proof](#1-setup--gate-proof)
+  - [2. Gate Verdicts](#2-gate-verdicts)
+  - [3. Results by Concurrency Level](#3-results-by-concurrency-level)
+  - [4. Charts](#4-charts)
+  - [5. Limitations & Disclosures](#5-limitations--disclosures)
 - [How to Reproduce](#how-to-reproduce)
   - [Reproducing Phase 2 (CPU Tabular)](#reproducing-phase-2-cpu-tabular)
   - [Reproducing Phase 3 (GPU Embeddings)](#reproducing-phase-3-gpu-embeddings)
@@ -167,87 +164,66 @@ Two subtractions locate the parts (indicative; derived from cross-block summary 
 
 ---
 
-## Phase 3: GPU Embeddings Benchmark (Sentence-Transformers on NVIDIA L4) (In Progress)
+## Phase 3: GPU Embeddings Benchmark (Sentence-Transformers on NVIDIA L4)
 
-> **Status: In Progress**  
-> All architectural unblocking fixes (offloading model encoding to worker threads via `asyncio.to_thread`), manifest parity (`torch==2.2.0`, pinned `g6.xlarge` instances), and hardened 5-trial loadgen runners are completed in the codebase. The metrics below reflect the exploratory preliminary single-run snapshot; final verification and official gate sign-off are pending the multi-trial re-measurement detailed in [Section 6: Pending Actions & TODOs](#6-pending-actions--todos).
+Compares **Direct Serving (GPU)** (FastAPI + PyTorch with an asyncio micro-batching queue) against **Ray Serve (HAProxy :8000)** (`@serve.batch` behind Ray 2.60's HAProxy ingress). Both serve `sentence-transformers/all-MiniLM-L6-v2` in FP16 on one NVIDIA L4 each. The run covered **60 trials in one block**: 2 arms × 6 closed-loop concurrency levels (C=1, 4, 8, 16, 32, 64) × 5 trials of 30 s, 1,683,922 requests, 0 failed. Full statistics: [Phase 3 Report](results/phase3-gpu-rerun-2026-11-19-report.md), [Statistical Summary](results/phase3-gpu-rerun-2026-11-19/summary.md). Raw data, the run log, and preflight/teardown evidence are committed under `results/phase3-gpu-rerun-2026-11-19/`.
 
-Evaluates GPU dynamic request micro-batching on modern NVIDIA Tensor Cores by comparing **Direct Serving (FastAPI + PyTorch + Async Queue Batching)** against **Ray Serve (`@serve.batch` + Direct Ingress :30000)** under client concurrencies from $C=1$ to $C=64$.
+### 1. Setup & Gate Proof
 
-### 1. Setup & Hardware Parity
-- **Model:** Hugging Face `sentence-transformers/all-MiniLM-L6-v2` in FP16 (`torch.float16`, 384-dimensional dense vectors, 22M parameters).
-- **Workload:** 2,000 realistic e-commerce / catalog search query payloads (sequence lengths varying from 16 to 128 tokens).
-- **GPU Hardware:** AWS **`g6` (NVIDIA L4 24GB Tensor Core GPU)** on AWS EKS (`us-east-1d`).
-- **Co-Location Standard:** Both Direct Serving and Ray Serve GPU pods, along with the in-cluster `k6` load generator, were co-located in the same AWS Availability Zone (`us-east-1d`) with **zero cross-AZ hops**.
-- **Replica Parity:** Exactly 1 GPU replica per architecture (1x NVIDIA L4, 2 vCPUs, 8 GiB memory).
-- **Batching Parameters:** Maximum batch size = 32, Batch wait timeout = 5 ms (`0.005s`).
-- **Evaluation Matrix:** Concurrency levels $C \in [1, 4, 8, 16, 32, 64]$, sustained for **30 seconds per level**.
+- **Stack:** Ray **2.60.0** / KubeRay **1.7.2** / EKS **1.34**, NVIDIA device plugin v0.17.1, `torch==2.2.0` in both arms. Four nodes in `us-west-2a`: a `c6i.2xlarge` head, two `g6.xlarge` GPU nodes (Direct on one, the Ray worker on the other), and a `c6i.2xlarge` k6 load generator.
+- **Serve config:** `RAY_SERVE_ENABLE_HA_PROXY=1` + `RAY_SERVE_THROUGHPUT_OPTIMIZED=1`, `max_ongoing_requests: 1000`, 1 replica. Both arms batch with `max_batch_size=32` and a 5 ms wait (untuned). Ray Serve runs `max_concurrent_batches=1`.
+- **Verified before load, not assumed** ([`gpu-preflight.log`](results/phase3-gpu-rerun-2026-11-19/preflight/gpu-preflight.log)): both serving pods see an NVIDIA L4 with CUDA available. HAProxy request counters rose 170 → 190 across 10/10 requests through `ray-ha-svc`. There are 2 HAProxyManager actors and the throughput flags are live in the running head and worker containers. The cluster was deleted before analysis (`all cluster resources were deleted`, 08:30:45 UTC, [`teardown.log`](results/phase3-gpu-rerun-2026-11-19/preflight/teardown.log)).
 
-### 2. Concurrency Sweep Results Matrix
+### 2. Gate Verdicts
 
-| Architecture | Concurrency ($C$) | Throughput (embeddings/s) | p50 (ms) | p90 (ms) | p95 (ms) | p99 (ms) | Failure Rate |
-|---|---|---|---|---|---|---|---|
-| **Direct Serving (Async Queue)** | 1 | **93.60** | **10.41** | 10.79 | **10.87** | 11.25 | 0.00% |
-| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 1 | **85.62** | **10.93** | 13.23 | **13.57** | 15.75 | 0.00% |
-| **Direct Serving (Async Queue)** | 4 | **350.18** | **11.09** | 11.73 | **11.96** | 12.68 | 0.00% |
-| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 4 | **309.59** | **12.17** | 14.57 | **15.34** | 17.70 | 0.00% |
-| **Direct Serving (Async Queue)** | 8 | **715.72** | **10.70** | 11.46 | **11.80** | 13.40 | 0.00% |
-| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 8 | **563.44** | **13.40** | 16.41 | **17.54** | 21.22 | 0.00% |
-| **Direct Serving (Async Queue)** | 16 | **1,266.70** | **12.06** | 13.27 | **14.04** | 17.31 | 0.00% |
-| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 16 | **951.83** | **15.89** | 20.08 | **21.75** | 26.18 | 0.00% |
-| **Direct Serving (Async Queue)** | 32 | **2,271.48** | **11.75** | 16.13 | **17.76** | **111.65** | 0.00% |
-| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 32 | **1,671.63** | **16.92** | 25.58 | **28.41** | **37.50** | 0.00% |
-| **Direct Serving (Async Queue)** | 64 (Saturated) | **1,826.88** | **32.15** | 35.86 | **46.57** | **138.18** | 0.00% |
-| **Ray Serve (@serve.batch + Direct Ingress :30000)** | 64 (Saturated) | **1,664.16** | **34.63** | 52.17 | **58.38** | **69.04** | 0.00% |
+| Gate | Criterion | Verdict | Numbers |
+|---|---|---|---|
+| **Low-load latency** | C=1, C=4: Δp95 ≤ 3.0 ms or ≤ 10% | **PASS** | +0.344 ms (+3.2%) at C=1; +0.874 ms (+7.6%) at C=4 |
+| **Goodput** | Ray Serve ≥ 95% of Direct at every level | **FAIL** | 98.39% at C=1; 94.37% at C=4; 89.74% / 90.54% / 66.16% / 89.73% at C=8 / 16 / 32 / 64 |
+| **Batch scaling** | ×3 throughput C=1 → C=32 **and** p95 ≤ 20 ms at C=32 | **FAIL** | ×15.63 (PASS), p95 33.890 ms (FAIL) |
+| **Saturation (C=64)** | Ray Serve p99 ≤ Direct p99 + 3.0 ms | **PASS** | 70.050 ms vs 132.829 ms; Δp99 −62.779 ms [−66.202, −60.983] |
 
-### 3. Visual Performance Curves
+**Reading the gates:**
+
+- **At low load, Ray Serve's HAProxy path costs under a millisecond at p95.** The gap widens as batches fill: Ray Serve's p99 is +9.7 ms at C=8 and +21.2 ms at C=16, and its goodput falls below 95% from C=4 on.
+- **Direct peaks higher:** 2,163 req/s at C=32 against Ray Serve's best of 1,494 req/s at C=64. Direct then drops to 1,665 req/s at C=64.
+- **Ray Serve keeps a much shorter tail at saturation.** At C=64 its p99 is about half of Direct's, with both arms offloading encoding off the event loop.
+- **Direct has a hidden tail at C=32.** p95 is about 18.4 ms but p99 is about 106 ms in all 5 trials. k6's flag only checks p95 < 25 ms, so it doesn't catch this.
+- **15 of 60 trials crossed k6's p95 < 25 ms budget** (Direct C=64, and Ray Serve at C=32 and C=64, 5 trials each). None had failed requests. All 15 are kept in the statistics.
+
+### 3. Results by Concurrency Level
+
+Medians over 5 trials per cell. Throughput is the per-level mean. The [summary](results/phase3-gpu-rerun-2026-11-19/summary.md) has IQRs, t-CIs, and bootstrap CIs on every delta.
+
+| Level | Direct req/s | Ray Serve req/s | Direct p95 | Ray Serve p95 | Direct p99 | Ray Serve p99 |
+|---|---|---|---|---|---|---|
+| C=1 | 93.02 | 91.52 | 10.851 ms | 11.195 ms | 11.507 ms | 12.330 ms |
+| C=4 | 349.00 | 329.33 | 11.552 ms | 12.426 ms | 12.101 ms | 13.746 ms |
+| C=8 | 698.32 | 626.68 | 11.441 ms | 13.266 ms | 12.284 ms | 21.957 ms |
+| C=16 | 1,196.41 | 1,083.25 | 13.366 ms | 16.263 ms | 14.428 ms | 35.580 ms |
+| C=32 | 2,162.53 | 1,430.80 | 18.334 ms | 33.890 ms | 106.011 ms | 43.056 ms |
+| C=64 | 1,664.73 | 1,493.79 | 122.541 ms | 60.999 ms | 132.829 ms | 70.050 ms |
+
+### 4. Charts
 
 <p align="center">
-  <img src="docs/images/phase3_gpu_throughput_scaling.svg" alt="Phase 3: GPU Throughput Scaling Curve" width="850">
+  <img src="docs/images/phase3_gpu_rerun_throughput_scaling.svg" alt="Throughput vs concurrency for Direct Serving (GPU) and Ray Serve (HAProxy :8000), C=1 to C=64, with per-trial points and 95% CI bands" width="760">
 </p>
 
 <p align="center">
-  <img src="docs/images/phase3_gpu_latency_tail_overload.svg" alt="Phase 3: GPU Latency and Overload Tail" width="950">
+  <img src="docs/images/phase3_gpu_rerun_latency_tail.svg" alt="p95 and p99 latency vs concurrency for both arms, with per-trial points and 95% CI bands" width="950">
 </p>
 
-*Phase 3 chart legends retain a legacy "HAProxy :30000" label; read it as "Direct Ingress (`:30000`)". Chart regeneration with corrected labels and error bars is tracked in Section 6.*
+### 5. Limitations & Disclosures
 
-### 4. Plain Headline Findings (Stated Plainly, No Spin)
+- 5 trials per (arm × level), 30 s each, closed-loop at fixed concurrency, one 15 s warmup per (arm × level). CIs are computed on n = 5.
+- Scope: one small model (22M parameters) on one GPU type, one replica per arm. Batching parameters are untuned (32 / 5 ms, serial batches on Ray Serve). Different settings could change the C=4–C=32 picture.
+- The Direct baseline is a hand-built asyncio queue, not Triton or TorchServe. Both arms offload encoding with `asyncio.to_thread`.
+- Nodes are separated by type and role only. Each arm had its own GPU node, so per-host variance is not separated from the arm effect.
+- On the Ray worker, CUDA was confirmed via `nvidia-smi` plus app readiness, not an in-container torch check.
+- Seed 42 on every trial, a seeded shuffled run order with a 3 s cooldown, logged in [`run-logs/gblock1-run.log`](results/phase3-gpu-rerun-2026-11-19/run-logs/gblock1-run.log).
 
-1. **Direct serving (custom asyncio queue) wins raw goodput:** Direct serving peaked at 2,271 embeddings/s at C=32, compared to 1,672 embeddings/s for Ray Serve. Ray Serve reaches **73.6% of direct serving goodput**, **failing the >= 95% goodput gate**.
-2. **At low load, Ray Serve adds ~2.7 ms p95 at C=1 (passing the <= 3.0 ms absolute gate) and +3.4 ms at C=4 (failing the gate).**
-3. **Ray Serve fails the Batch Scaling latency gate at C=32:** While throughput scaled 19.5x, its p95 was 28.41 ms (exceeding the <= 20 ms ceiling; Direct Serving passed at 17.76 ms).
-4. **Tail latency under closed-loop saturation (C=64) reflects pre-fix baseline artifacts [Pre-Fix Snapshot]:** In the initial exploratory single-run, Ray Serve recorded p99 = 69.04 ms vs 138.18 ms on Direct Serving. However, this preliminary comparison was measured before Direct Serving was decoupled from the event loop via asyncio.to_thread. With event loop starvation now eliminated, definitive conclusions require re-running the 5-trial matrix.
-
-### 5. Honesty & Reproducibility Disclosures
-
-- **Single 30-Second Runs per Level:** Each concurrency level is a single 30-second run. There are no multi-trial confidence intervals; small differences are indicative rather than definitive.
-- **Event Loop Starvation Spike at C=32/64 in Pre-Fix Baseline:** Direct serving exhibited p95 = 17.76 ms but jumped to p99 = 111.65 ms at C=32 and 138.18 ms at C=64. This was traced directly to model.encode running synchronously on the FastAPI event loop thread. In the current codebase, this has been decoupled via asyncio.to_thread.
-- **Explanation of Model Batch Time Measurement Boundaries:** In Direct Serving, internal timers strictly bracket `model.encode()` around the accumulated tensor batch (~4.5 ms at $C=1$). In Ray Serve, timers bracket the async invocation `await self.batched_encode()` (~10.4 ms at $C=1$), which encompasses Ray's 5 ms batch wait window (`batch_wait_timeout_s=0.005`) plus model execution. This is a measurement boundary difference, not a 2x difference in CUDA execution speed.
-- **Dynamic Batching Configuration:** Both frameworks used `max_batch_size: 32` and `batch_wait_timeout_s: 0.005` (5 ms). These settings were fixed as baseline defaults and were **not hyperparameter tuned** for Ray Serve.
-- **Baseline Scope:** The Direct Serving baseline is a **custom Python asyncio queue implementation** (`asyncio.Queue` background worker), not an enterprise C++ server like NVIDIA Triton or TorchServe. Conclusions apply strictly to this custom FastAPI/PyTorch setup versus Ray Serve.
-- **Scope Limit:** Do not generalize beyond this workload: findings reflect **one small embedding model** (22M parameters) on **one GPU instance family** (AWS G6 / NVIDIA L4).
-
-### 6. Pending Actions & TODOs
-
-The following actionable tasks remain to bring Phase 3 to completion:
-
-1. **[High Priority] Re-Run Concurrency Load Matrix (GPU Re-Measurement):**
-   - **Context:** The initial baseline ran PyTorch `model.encode()` synchronously on the FastAPI event loop, causing event-loop starvation and artificial tail latency at higher concurrencies ($p99 = 111.65\text{ ms}$ at $C=32$, $138.18\text{ ms}$ at $C=64$). Both Direct Serving and Ray Serve have now been decoupled via `asyncio.to_thread` and pinned to `torch==2.2.0` on `g6.xlarge` instances (instance type and zone pinned; nodes not isolated).
-   - **Action:** Spin up a temporary `g6.xlarge` instance in `us-east-1d` and execute `benchmarks/gpu-embed/loadgen/run_embed_matrix.py` across 5 randomized trials $\times$ 6 concurrency levels ($C \in \{1, 4, 8, 16, 32, 64\}$) with a 15-second warmup stage.
-   - **Deliverable:** Publish updated goodput and latency percentiles with 95% Bootstrap Confidence Intervals; definitively sign off on the $C=64$ closed-loop saturation decision gate (currently labeled `INCONCLUSIVE / PENDING RE-RUN`).
-
-2. **[Medium Priority] Re-Generate Phase 3 Performance Charts with Error Bars:**
-   - **Context:** Existing SVG/PNG charts (`docs/images/phase3_gpu_*`) plot single lines from the preliminary snapshot without variance indicators.
-   - **Action:** Update chart generation to plot mean curves with shaded 95% confidence interval bands (or error bars) and individual trial scatter points.
-
-3. **[Medium Priority] Batch Wait Timeout Sensitivity Sweep:**
-   - **Context:** The current static 5 ms wait timeout (`batch_wait_timeout_s=0.005`) is relatively large compared to the ~4.5 ms raw model execution time.
-   - **Action:** Run a parameter sweep over `batch_wait_timeout_s` across $\{0\text{ ms}, 1\text{ ms}, 2\text{ ms}, 5\text{ ms}\}$ for both Direct Serving and Ray Serve to map the latency vs. throughput trade-off curve.
-
-4. **[Low Priority] Open-Loop Arrival-Rate GPU Sweep:**
-   - **Context:** Concurrency testing (`constant-vus`) is closed-loop (client throttles as the server slows down).
-   - **Action:** Execute `loadgen/k6_embed.js` with `--profile sweep` (`ramping-arrival-rate`) to evaluate true open-loop queue blowup and arrival-rate capacity limits.
+The October snapshot (`results/phase3-gpu-embeddings-report.md`, `results/gpu_embed/`) is retained unchanged for provenance.
 
 ---
 
@@ -308,35 +284,29 @@ python3 results/analyze.py \
 
 ### Reproducing Phase 3 (GPU Embeddings)
 
-#### 1. Generate Query Fixtures
+#### 1. Create the GPU cluster
+
+Cluster definition, kubeconfig, NVIDIA device plugin, KubeRay install, and the delete/leak-check walkthrough: [`infra/phase3-gpu-rerun/README.md`](infra/phase3-gpu-rerun/README.md) (4 nodes in `us-west-2a`: a `c6i.2xlarge` head, two `g6.xlarge` GPU nodes, and a `c6i.2xlarge` load generator).
+
+#### 2. Deploy both arms and run the preflight gate
+
+Follow [`benchmarks/phase3-gpu-rerun/README.md`](benchmarks/phase3-gpu-rerun/README.md) (ConfigMaps, `00`–`03` manifests). No load runs unless the gate passes:
+
 ```bash
-cd benchmarks/gpu-embed
-python3 fixtures/generate_fixtures.py --count 2000 --output fixtures/queries.jsonl
+NS=model-serving-benchmark KUBECTL=kubectl \
+  bash benchmarks/phase3-gpu-rerun/preflight.sh gpu
 ```
 
-#### 2. Deploy Direct GPU Serving & Ray Serve
+#### 3. Measure, tear down, then analyze
+
+The `gblock1` matrix (6 levels × 2 arms × 5 trials, seed 42) runs in-cluster from the driver pod via `benchmarks/phase3-gpu-rerun/loadgen/run_gpu_matrix.py`. Delete the cluster as soon as the raw data is copied out. Analysis and charts are offline:
+
 ```bash
-# Create application code ConfigMaps
-kubectl create configmap direct-gpu-embed-code --from-file=app.py=direct/app.py -n model-serving-benchmark
-kubectl create configmap ray-gpu-embed-code --from-file=serve_embed.py=ray/serve_embed.py -n model-serving-benchmark
-
-# Deploy Direct Serving and Ray Serve
-kubectl apply -f direct/k8s/ -n model-serving-benchmark
-kubectl wait --for=condition=ready pod -l app=direct-gpu-embed -n model-serving-benchmark --timeout=300s
-
-kubectl apply -f ray/rayservice-embed.yaml -n model-serving-benchmark
-kubectl wait --for=condition=Ready rayservice/rayservice-gpu-embed -n model-serving-benchmark --timeout=300s
-```
-
-#### 3. Execute the Concurrency Sweep
-From a load generator pod in `us-east-1d`:
-```bash
-python3 loadgen/run_embed_matrix.py \
-  --concurrencies 1,4,8,16,32,64 \
-  --trials 5 \
-  --duration 30s \
-  --k6-script loadgen/k6_embed.js \
-  --output-dir ../../results/gpu_embed
+python3 results/analyze_gpu.py \
+  --data results/phase3-gpu-rerun-2026-11-19/phase3-raw.json \
+  --output results/phase3-gpu-rerun-2026-11-19/summary.md
+python3 benchmarks/phase3-gpu-rerun/make_charts.py \
+  --data results/phase3-gpu-rerun-2026-11-19/phase3-raw.json
 ```
 
 ---
@@ -365,7 +335,7 @@ python3 loadgen/run_embed_matrix.py \
 
 - [x] **Phase 1: Open-Source CPU XGBoost Tabular Baseline**
 - [x] **Phase 2: CPU Saturation & 4-Arm Routing Comparison** (Direct vs. Ray Default Proxy vs. Ray HAProxy vs. Ray Direct Ingress, plus a local HAProxy control) — Ray 2.60.0 / KubeRay 1.7.2, HAProxy verified in the path.
-- [ ] **Phase 3: GPU Dynamic Micro-Batching (In Progress)** (`sentence-transformers/all-MiniLM-L6-v2` on NVIDIA L4) — Code, manifests, and loadgen hardened; multi-trial matrix re-measurement pending.
+- [x] **Phase 3: GPU Dynamic Micro-Batching** (`sentence-transformers/all-MiniLM-L6-v2` on NVIDIA L4, Direct vs. Ray Serve HAProxy `:8000`): multi-trial matrix measured; saturation gate resolved (PASS). Low-load latency PASS; goodput and batch-scaling FAIL.
 - [ ] **Phase 4: Large Language Model Serving (vLLM + Llama 3.1 8B)** — TTFT, TPOT, and official Ray LLM Perf benchmark methodology.
 - [ ] **Phase 5: Multi-Model Orchestration & Resource Contention** — Composite DAG pipelines combining CPU tabular preprocessing, GPU vector embeddings, and LLM generative reranking under shared cluster contention.
 - [ ] **Phase 6: Elastic Autoscaling & Cloud Economics** — Cost per 1,000 requests and cost per million tokens comparing Ray Serve logical queue autoscaling against native Kubernetes HPA.
@@ -383,17 +353,19 @@ ray-serve-model-serving-benchmark/
 │   ├── plan.md                  # Original benchmark plan & methodology
 │   ├── topology-and-request-path.md # Cluster topology, port roles, and request paths
 │   ├── phase3-gpu-embeddings-plan.md # Phase 3 GPU embeddings plan
-│   ├── superpowers/             # Design/spec/plan documents for the Phase 2 rerun
-│   └── images/                  # Phase 3 benchmark vector charts
+│   ├── superpowers/             # Design/spec/plan documents for the Phase 2 and Phase 3 reruns
+│   └── images/                  # Benchmark vector charts
 ├── infra/phase2-rerun/
 │   ├── eksctl-cluster.yaml      # 4-node single-AZ EKS cluster definition
 │   └── README.md                 # Create / kubeconfig / delete walkthrough
+├── infra/phase3-gpu-rerun/       # GPU cluster (2× g6.xlarge), NVIDIA device plugin, walkthrough
 ├── benchmarks/
 │   ├── phase2-cpu-rerun/         # Phase 2 rerun manifests & preflight gate
 │   │   ├── 00..04-*.yaml         # namespace, Direct, Python proxy, HAProxy+local driver
 │   │   ├── preflight.sh          # HAProxy/runtime verification gate (must pass before load)
 │   │   └── README.md             # Block-by-block deployment + reproduce steps
-│   └── gpu-embed/                # Phase 3 GPU benchmark sources & manifests
+│   ├── phase3-gpu-rerun/         # Phase 3 manifests, GPU preflight gate, matrix runner, make_charts.py
+│   └── gpu-embed/                # GPU serving app sources (direct/app.py, ray/serve_embed.py), fixtures
 ├── model/
 │   ├── train.py                  # Seeded synthetic XGBoost generator
 │   └── artifacts/model.json      # Pinned model weights
@@ -405,10 +377,11 @@ ray-serve-model-serving-benchmark/
 ├── tests/                        # Manifest invariants, timer alignment, runner & analyzer tests
 └── results/
     ├── analyze.py                # Block-aware statistical analysis (required --data/--output)
+    ├── analyze_gpu.py            # Phase 3 GPU analysis + four gates (required --data/--output)
     ├── phase2-rerun-2026-11-18-report.md   # Phase 2 report (latest run)
-    ├── phase3-gpu-embeddings-report.md     # Phase 3 report (in progress)
+    ├── phase3-gpu-rerun-2026-11-19-report.md # Phase 3 report (latest run)
     ├── phase2-rerun-2026-11-18/            # Phase 2 raw data, summary, run logs, preflight evidence
-    └── gpu_embed/                          # Phase 3 raw k6 sweep JSON files
+    └── phase3-gpu-rerun-2026-11-19/        # Phase 3 raw data, summary, run log, preflight/teardown evidence
 ```
 
 The original October 2026 Phase 2 dataset and reports (`results/raw_trials.{json,csv}`, `results/summary_report.md`, `docs/report.md`) are retained in the repository for provenance, unchanged apart from the earlier port-role label correction; all Phase 2 conclusions should be drawn from the rerun artifacts linked above. The legacy deployment manifests under `k8s/` and its README document that original setup.
